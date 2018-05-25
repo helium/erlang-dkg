@@ -1,0 +1,16 @@
+{application, dkg,
+ [{description, "Erlang implementation of a Distributed Key Generator"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    erlang_pbc
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Helium"]},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
