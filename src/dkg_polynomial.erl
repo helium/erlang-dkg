@@ -30,7 +30,7 @@ apply(Poly, X) ->
     %% why can't we just use set0 here?
     Zero = erlang_pbc:element_add(hd(Poly), erlang_pbc:element_neg(hd(Poly))),
     lists:foldl(fun(Coeff, Acc) ->
-                        erlang_pbc:element_mul(erlang_pbc:element_mul(Acc, X), Coeff)
+                        erlang_pbc:element_add(erlang_pbc:element_mul(Acc, X), Coeff)
                 end, Zero, Poly).
 
 print(Poly) ->
