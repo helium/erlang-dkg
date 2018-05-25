@@ -25,9 +25,13 @@ sub(PolyA, PolyB) ->
 degree(Poly) ->
     tuple_size(Poly) - 1.
 
-apply(_Poly, _Element) ->
-    %% TODO need the polynomial stuff implemented to do this
-    ok.
+apply(Poly, X) ->
+    PolyX = [X], %% polynomial has degree 0
+    Result = [], %% empty result polynomial
+    lists:foldl(fun(Row, Acc) ->
+                        Temp = dkg_polynomial:mul(Acc, PolyX),
+                        dkg_polynomial:add(Temp, tuple_to_list(Row))
+                end, Poly, Result).
 
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
@@ -35,12 +39,11 @@ print(Poly) ->
               end, Poly)).
 
 merge(PolyA, PolyB, MergeFun) ->
-    %% I just guess we just assume the first polynomial is always equal in size or smaller than the second one?
     Degree = max(tuple_size(PolyA), tuple_size(PolyB)),
     %% why can't we just use set0 here?
     Zero = erlang_pbc:element_add(access([1,1], PolyB), erlang_pbc:element_neg(access([1,1], PolyB))),
 
-    %% make sure both matices are the same size
+    %% make sure both matrices are the same size
     ExpandedPolyA = expand(PolyA, Degree, Zero),
     ExpandedPolyB = expand(PolyB, Degree, Zero),
 
@@ -52,7 +55,6 @@ merge(PolyA, PolyB, MergeFun) ->
 
     %% trim any leading coefficents that are 0
     %% and delete any rows at the end that are all 0s
-    
     prune(MergedPoly).
 
 expand(Poly, Degree, Padding) ->
@@ -74,7 +76,7 @@ pad_row(R, Degree, Padding) ->
 
 prune(Poly) ->
     %% we need to find the minimum degree needed to represent this polynomial
-    %% essentually this means how many rows and columns can we prune of zeros
+    %% essentially this means how many rows and columns can we prune of zeros
     %% while keeping the matrix square
     Width = lists:foldl(fun(Row, MaxWidth) ->
                                 W = length(lists:dropwhile(fun erlang_pbc:element_is0/1, lists:reverse(tuple_to_list(Row)))),
