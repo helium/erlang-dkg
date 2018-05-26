@@ -1,6 +1,6 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, new/3, access/2, cmp/2, mul/2, verify_poly/3]).
+-export([new/2, new/3, access/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
 
 new(Pairing, T) ->
     One = erlang_pbc:element_set(1, erlang_pbc:element_new('G1', Pairing)),
@@ -40,6 +40,7 @@ mul(MatrixA, MatrixB) ->
 
 verify_poly(Matrix, VerifierID, Poly) ->
     %% TODO obviously use something appropriate here
+    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', hd(Poly)), 1),
     U = erlang_pbc:element_from_hash(G1, <<"lol">>),
     I = erlang_pbc:element_set(hd(Poly), VerifierID),
 
@@ -54,6 +55,36 @@ verify_poly(Matrix, VerifierID, Poly) ->
                         erlang_pbc:element_cmp(E1, E2)
                 end, true, lists:seq(1, length(Poly))).
 
+verify_point(Matrix, SenderID, VerifierID, Point) ->
+    M = erlang_pbc:element_set(Point, SenderID),
+    I = erlang_pbc:element_set(Point, VerifierID),
+    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', Point), 1),
+    %% TODO obviously use something appropriate here
+    U = erlang_pbc:element_from_hash(G1, <<"lol">>),
 
 
+    Ga = erlang_pbc:element_pow(U, Point),
+    Res = lists:foldl(fun(II, Acc) ->
+                              R = erlang_pbc:element_pow(Acc, M),
+                              Row = lists:foldl(fun(J, Acc2) ->
+                                                        erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), access([II, J], Matrix))
+                                                end, G1, lists:seq(tuple_size(Matrix))),
+                              erlang_pbc:element_mul(R, Row)
+                      end, G1, lists:seq(tuple_size(Matrix))),
+    erlang_pbc:element_cmp(Ga, Res).
+
+public_key_share(Matrix, NodeID) ->
+    %% TODO this shares significant code with verify_point, consider refactoring them to share common code
+    M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', access([1, 1], Matrix)), NodeID),
+    I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', access([1, 1], Matrix)), 0),
+    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', access([1, 1], Matrix)), 1),
+
+    %% return the public key share
+    lists:foldl(fun(II, Acc) ->
+                        R = erlang_pbc:element_pow(Acc, M),
+                        Row = lists:foldl(fun(J, Acc2) ->
+                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), access([II, J], Matrix))
+                                          end, G1, lists:seq(tuple_size(Matrix))),
+                        erlang_pbc:element_mul(R, Row)
+                end, G1, lists:seq(tuple_size(Matrix))).
 
