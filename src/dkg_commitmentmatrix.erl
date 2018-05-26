@@ -38,5 +38,22 @@ mul(MatrixA, MatrixB) ->
                         insert([Row, Col], Acc, erlang_pbc:element_mul(access([Row, Col], MatrixA), access([Row, Col], MatrixB)))
                 end, MatrixA, [ {R, C} || R <- lists:seq(1, tuple_size(MatrixA)), C <- lists:seq(1, tuple_size(MatrixA))]).
 
-verify_poly(_Matrix, _VerifierID, _Poly) ->
-    ok.
+verify_poly(Matrix, VerifierID, Poly) ->
+    %% TODO obviously use something appropriate here
+    U = erlang_pbc:element_from_hash(G1, <<"lol">>),
+    I = erlang_pbc:element_set(hd(Poly), VerifierID),
+
+
+    lists:foldl(fun(_L, false) ->
+                        false;
+                   (L, _Acc) ->
+                        E1 = erlang_pbc:element_pow(U, lists:nth(L, Poly)),
+                        E2 = lists:foldl(fun(J, Acc2) ->
+                                                 erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), access([J, L], Matrix))
+                                         end, erlang_pbc:element_set(1, U), lists:seq(1, tuple_size(Matrix))),
+                        erlang_pbc:element_cmp(E1, E2)
+                end, true, lists:seq(1, length(Poly))).
+
+
+
+
