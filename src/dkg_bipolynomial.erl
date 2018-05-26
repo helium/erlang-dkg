@@ -1,6 +1,6 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, add/2, sub/2, degree/1, apply/2, print/1]).
+-export([generate/2, add/2, sub/2, degree/1, apply/2, print/1, access/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
 generate(Pairing, T) ->
