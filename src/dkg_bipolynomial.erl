@@ -21,12 +21,20 @@ generate(Pairing, T) ->
 generate(Pairing, T, Term) ->
     insert([0, 0], generate(Pairing, T), Term).
 
+add(PolyA, {}) ->
+    %% polyA + zeropoly = polyA
+    PolyA;
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
+sub(PolyA, {}) ->
+    %% polyA - zeropoly = polyA
+    PolyA;
 sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
+degree({}) ->
+    0;
 degree(Poly) ->
     tuple_size(Poly) - 1.
 
@@ -41,8 +49,8 @@ apply(Poly, X) ->
 
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
-                      list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
-              end, tuple_to_list(Poly))).
+                                    list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
+                            end, tuple_to_list(Poly))).
 
 merge(PolyA, PolyB, MergeFun) ->
     Degree = max(degree(PolyA), degree(PolyB)),
@@ -69,8 +77,8 @@ expand(Poly, Degree, Padding) ->
             Poly;
         false ->
             list_to_tuple(lists:map(fun(R) ->
-                              pad_row(R, Degree, Padding)
-                      end, tuple_to_list(Poly)) ++ lists:duplicate(Degree - degree(Poly), list_to_tuple(lists:duplicate(Degree+1, Padding))))
+                                            pad_row(R, Degree, Padding)
+                                    end, tuple_to_list(Poly)) ++ lists:duplicate(Degree - degree(Poly), list_to_tuple(lists:duplicate(Degree+1, Padding))))
     end.
 
 pad_row(R, Degree, Padding) ->
@@ -96,8 +104,8 @@ prune(Poly) ->
     NewDimension = max(Height, Width),
     HeightAdjustedPoly = lists:sublist(tuple_to_list(Poly), NewDimension),
     list_to_tuple(lists:map(fun(Row) ->
-                      list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
-              end, HeightAdjustedPoly)).
+                                    list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
+                            end, HeightAdjustedPoly)).
 
 lookup([Row, Col], Poly) ->
     element(Col, element(Row, Poly)).
