@@ -11,16 +11,11 @@ generate(Pairing, T) ->
 generate(Pairing, T, Term) ->
     [Term | generate(Pairing, T - 1)].
 
+%% generate a random polynomial of degree t such that f(Index) => Term
 generate(Pairing, T, Index, Term) ->
-    Poly = generate(Pairing, T),
+    [Head | Tail] = Poly = generate(Pairing, T),
     Val = apply(Poly, Index),
-    [Head | Tail] = Poly,
-    io:format("Index: ~p~n", [erlang_pbc:element_to_string(Index)]),
-    io:format("Term: ~p~n", [erlang_pbc:element_to_string(Term)]),
-    io:format("Head: ~p~n", [erlang_pbc:element_to_string(Head)]),
-    NewHead = erlang_pbc:element_sub(Head, erlang_pbc:element_add(Val, Term)),
-    io:format("NewHead: ~p~n", [erlang_pbc:element_to_string(NewHead)]),
-    io:format("Val: ~p~n", [erlang_pbc:element_to_string(Val)]),
+    NewHead = erlang_pbc:element_add(erlang_pbc:element_sub(Head, Val), Term),
     [NewHead | Tail].
 
 add(PolyA, PolyB) ->
