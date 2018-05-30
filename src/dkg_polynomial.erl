@@ -8,6 +8,8 @@ generate(Pairing, T) ->
     [ erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)) || _ <- lists:seq(0, T)].
 
 %% Create a random polynomial of degree t with the given constant term
+generate(Pairing, T, Term) when is_integer(Term) ->
+    generate(Pairing, T, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), Term));
 generate(Pairing, T, Term) ->
     [Term | generate(Pairing, T - 1)].
 
@@ -29,7 +31,7 @@ mul(PolyA, PolyB) ->
     Zero = erlang_pbc:element_add(hd(PolyB), erlang_pbc:element_neg(hd(PolyB))),
     lists:foldl(fun(V, Acc0) ->
                         Acc = [Zero|Acc0],
-                        Temp = [ erlang_pbc:mul(A, V) || A <- PolyA ],
+                        Temp = [ erlang_pbc:element_mul(A, V) || A <- PolyA ],
                         add(Acc, Temp)
                 end, [], PolyB).
 
