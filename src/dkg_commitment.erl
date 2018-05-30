@@ -31,9 +31,9 @@ verify_point(Commitment, SenderID, VerifierID, Point) ->
 
 interpolate(Commitment, EchoOrReady, _ActiveNodes) ->
     _Map = case EchoOrReady of
-              echo -> Commitment#commitment.echoes; 
-              ready -> Commitment#commitment.readies
-          end,
+               echo -> Commitment#commitment.echoes;
+               ready -> Commitment#commitment.readies
+           end,
     %% TODO
     ok.
 

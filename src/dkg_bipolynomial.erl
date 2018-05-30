@@ -1,6 +1,6 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, add/2, sub/2, degree/1, apply/2, print/1, access/2]).
+-export([generate/2, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
 generate(Pairing, T) ->
@@ -41,7 +41,7 @@ print(Poly) ->
 merge(PolyA, PolyB, MergeFun) ->
     Degree = max(tuple_size(PolyA), tuple_size(PolyB)),
     %% why can't we just use set0 here?
-    Zero = erlang_pbc:element_add(access([1,1], PolyB), erlang_pbc:element_neg(access([1,1], PolyB))),
+    Zero = erlang_pbc:element_add(lookup([1,1], PolyB), erlang_pbc:element_neg(lookup([1,1], PolyB))),
 
     %% make sure both matrices are the same size
     ExpandedPolyA = expand(PolyA, Degree, Zero),
@@ -50,7 +50,7 @@ merge(PolyA, PolyB, MergeFun) ->
     %% run the merge function on every matrix element
     %% use a cartesian product to simplify the iteration
     MergedPoly = lists:foldl(fun({Row, Col}, Acc) ->
-                                     insert([Row, Col], Acc, MergeFun(access([Row, Col], ExpandedPolyA), access([Row, Col], ExpandedPolyB)))
+                                     insert([Row, Col], Acc, MergeFun(lookup([Row, Col], ExpandedPolyA), lookup([Row, Col], ExpandedPolyB)))
                              end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree), C <- lists:seq(1, Degree)]),
 
     %% trim any leading coefficents that are 0
@@ -93,7 +93,7 @@ prune(Poly) ->
                       list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
               end, HeightAdjustedPoly).
 
-access([Row, Col], Poly) ->
+lookup([Row, Col], Poly) ->
     element(Col, element(Row, Poly)).
 
 insert([Row, Col], Poly, Val) ->
