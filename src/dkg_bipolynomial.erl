@@ -42,10 +42,10 @@ apply(Poly, X) ->
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
                       list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
-              end, Poly)).
+              end, tuple_to_list(Poly))).
 
 merge(PolyA, PolyB, MergeFun) ->
-    Degree = max(tuple_size(PolyA), tuple_size(PolyB)),
+    Degree = max(degree(PolyA), degree(PolyB)),
     %% why can't we just use set0 here?
     Zero = erlang_pbc:element_add(lookup([1,1], PolyB), erlang_pbc:element_neg(lookup([1,1], PolyB))),
 
@@ -57,7 +57,7 @@ merge(PolyA, PolyB, MergeFun) ->
     %% use a cartesian product to simplify the iteration
     MergedPoly = lists:foldl(fun({Row, Col}, Acc) ->
                                      insert([Row, Col], Acc, MergeFun(lookup([Row, Col], ExpandedPolyA), lookup([Row, Col], ExpandedPolyB)))
-                             end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree), C <- lists:seq(1, Degree)]),
+                             end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]),
 
     %% trim any leading coefficents that are 0
     %% and delete any rows at the end that are all 0s
