@@ -1,8 +1,9 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
+-export([generate/2, generate/3, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
+%% generate a bivariate polynomial of degree T
 generate(Pairing, T) ->
     lists:foldl(fun(I, Acc) ->
                         RandCoeff = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
@@ -16,6 +17,10 @@ generate(Pairing, T) ->
                                     end, NewAcc, lists:seq(I+1, T))
                 end, list_to_tuple(lists:duplicate(T+1, {})), lists:seq(0, T)).
 
+%% generate a bivariate polynomial of degree T with a fixed term
+generate(Pairing, T, Term) ->
+    insert([0, 0], generate(Pairing, T), Term).
+
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
@@ -28,10 +33,11 @@ degree(Poly) ->
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
     Result = [], %% empty result polynomial
+    %% go in reverse for coefficient rows
     lists:foldl(fun(Row, Acc) ->
                         Temp = dkg_polynomial:mul(Acc, PolyX),
                         dkg_polynomial:add(Temp, tuple_to_list(Row))
-                end, Poly, Result).
+                end, Result, lists:reverse(tuple_to_list(Poly))).
 
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
@@ -89,9 +95,9 @@ prune(Poly) ->
 
     NewDimension = max(Height, Width),
     HeightAdjustedPoly = lists:sublist(tuple_to_list(Poly), NewDimension),
-    lists:map(fun(Row) ->
+    list_to_tuple(lists:map(fun(Row) ->
                       list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
-              end, HeightAdjustedPoly).
+              end, HeightAdjustedPoly)).
 
 lookup([Row, Col], Poly) ->
     element(Col, element(Row, Poly)).

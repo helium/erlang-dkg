@@ -28,7 +28,7 @@ sub(PolyA, PolyB) ->
 
 mul(PolyA, PolyB) ->
     %% why can't we just use set0 here?
-    Zero = erlang_pbc:element_add(hd(PolyB), erlang_pbc:element_neg(hd(PolyB))),
+    Zero = erlang_pbc:element_add(hd(PolyA++PolyB), erlang_pbc:element_neg(hd(PolyA++PolyB))),
     lists:foldl(fun(V, Acc0) ->
                         Acc = [Zero|Acc0],
                         Temp = [ erlang_pbc:element_mul(A, V) || A <- PolyA ],
@@ -51,7 +51,7 @@ print(Poly) ->
 merge(PolyA, PolyB, MergeFun) ->
     Degree = max(length(PolyA), length(PolyB)),
     %% why can't we just use set0 here?
-    Zero = erlang_pbc:element_add(hd(PolyB), erlang_pbc:element_neg(hd(PolyB))),
+    Zero = erlang_pbc:element_add(hd(PolyA++PolyB), erlang_pbc:element_neg(hd(PolyA++PolyB))),
 
     %% pad the shorter polynomial so they're the same length
     ExpandedPolyA = PolyA ++ lists:duplicate(Degree - length(PolyA), Zero),
