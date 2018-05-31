@@ -7,11 +7,11 @@ coefficients(Pairing, Indices, Alpha) ->
                         One = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 1),
                         Num = lists:foldl(fun(E, Acc) ->
                                                   erlang_pbc:element_mul(Acc, E)
-                                          end, One, [ Idx - Alpha || {J, Idx} <- enumerate(Indices), J /= I]),
+                                          end, One, [ erlang_pbc:element_sub(Idx, Alpha) || {J, Idx} <- enumerate(Indices), J /= I]),
 
                         Den = lists:foldl(fun(E, Acc) ->
                                                   erlang_pbc:element_mul(Acc, E)
-                                          end, One, [ Idx - Index  || {J, Idx} <- enumerate(Indices), J /= I]),
+                                          end, One, [ erlang_pbc:element_sub(Idx, Index)  || {J, Idx} <- enumerate(Indices), J /= I]),
                         [erlang_pbc:element_div(Num, Den) | Acc1]
                 end, [], enumerate(Indices)).
 
