@@ -21,20 +21,12 @@ generate(Pairing, T) ->
 generate(Pairing, T, Term) ->
     insert([0, 0], generate(Pairing, T), Term).
 
-add(PolyA, {}) ->
-    %% polyA + zeropoly = polyA
-    PolyA;
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
-sub(PolyA, {}) ->
-    %% polyA - zeropoly = polyA
-    PolyA;
 sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
-degree({}) ->
-    0;
 degree(Poly) ->
     tuple_size(Poly) - 1.
 
@@ -54,8 +46,10 @@ print(Poly) ->
 
 merge(PolyA, PolyB, MergeFun) ->
     Degree = max(degree(PolyA), degree(PolyB)),
+    %% find the bigger term
+    [LargerPoly|_] = lists:sort(fun(A, B) -> degree(A) > degree(B) end, [PolyA, PolyB]),
     %% why can't we just use set0 here?
-    Zero = erlang_pbc:element_add(lookup([1,1], PolyB), erlang_pbc:element_neg(lookup([1,1], PolyB))),
+    Zero = erlang_pbc:element_add(lookup([1,1], LargerPoly), erlang_pbc:element_neg(lookup([1,1], LargerPoly))),
 
     %% make sure both matrices are the same size
     ExpandedPolyA = expand(PolyA, Degree, Zero),

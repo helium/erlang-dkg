@@ -21,7 +21,7 @@ add_zero_test() ->
     ZeroAddedPoly = dkg_bipolynomial:add(Poly, ZeroPoly),
     io:format("Poly: ~p~n", [Poly]),
     io:format("ZeroAddedPoly: ~p~n", [ZeroAddedPoly]),
-    ?assertEqual(Poly, ZeroAddedPoly),
+    ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroAddedPoly)),
     ok.
 
 subrtract_zero_test() ->
@@ -32,7 +32,7 @@ subrtract_zero_test() ->
     ZeroSubtractedPoly = dkg_bipolynomial:sub(Poly, ZeroPoly),
     io:format("Poly: ~p~n", [Poly]),
     io:format("ZeroSubtractedPoly: ~p~n", [ZeroSubtractedPoly]),
-    ?assertEqual(Poly, ZeroSubtractedPoly),
+    ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroSubtractedPoly)),
     ok.
 
 apply_test() ->
