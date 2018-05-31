@@ -10,6 +10,7 @@ constant_term_test() ->
     NinetyOne = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 91),
     %% first term should now be 0
     ?assert(erlang_pbc:element_is0(hd(PolyC))),
+    ?assertEqual("0", hd(dkg_polynomial:print(PolyC))),
     ?assert(erlang_pbc:element_cmp(hd(PolyA), NinetyOne)),
     ?assert(erlang_pbc:element_cmp(hd(PolyB), NinetyOne)).
 

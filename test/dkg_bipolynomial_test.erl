@@ -2,6 +2,12 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+generate_with_constant_term_test() ->
+    Pairing = erlang_pbc:group_new('SS512'),
+    FortyTwo = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 42),
+    Poly = dkg_bipolynomial:generate(Pairing, 5, FortyTwo),
+    ?assertEqual(FortyTwo, dkg_bipolynomial:lookup([1, 1], Poly)).
+
 self_subtract_test() ->
     Pairing = erlang_pbc:group_new('SS512'),
     Poly = dkg_bipolynomial:generate(Pairing, 5),
@@ -23,6 +29,20 @@ add_zero_test() ->
     io:format("ZeroAddedPoly: ~p~n", [ZeroAddedPoly]),
     ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroAddedPoly)),
     ok.
+
+add_different_sizes_test() ->
+    Pairing = erlang_pbc:group_new('SS512'),
+    PolyA = dkg_bipolynomial:generate(Pairing, 5),
+    PolyB = dkg_bipolynomial:generate(Pairing, 8),
+    AddedPoly = dkg_bipolynomial:add(PolyA, PolyB),
+    %% result should be of degree 8
+    ?assertEqual(8, dkg_bipolynomial:degree(AddedPoly)),
+    %% if we subtract B from the result, we should get back A with degree 5
+    SubtractedPoly = dkg_bipolynomial:sub(AddedPoly, PolyB),
+    ?assertEqual(5, dkg_bipolynomial:degree(SubtractedPoly)),
+    ?assertEqual(dkg_bipolynomial:print(PolyA), dkg_bipolynomial:print(SubtractedPoly)),
+    ok.
+
 
 subrtract_zero_test() ->
     Pairing = erlang_pbc:group_new('SS512'),

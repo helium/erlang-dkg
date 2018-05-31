@@ -19,7 +19,7 @@ generate(Pairing, T) ->
 
 %% generate a bivariate polynomial of degree T with a fixed term
 generate(Pairing, T, Term) ->
-    insert([0, 0], generate(Pairing, T), Term).
+    insert([1, 1], generate(Pairing, T), Term).
 
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
