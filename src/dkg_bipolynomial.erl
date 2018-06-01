@@ -1,8 +1,9 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, add/2, sub/2, degree/1, apply/2, print/1, access/2]).
+-export([generate/2, generate/3, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
+%% generate a bivariate polynomial of degree T
 generate(Pairing, T) ->
     lists:foldl(fun(I, Acc) ->
                         RandCoeff = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
@@ -16,6 +17,10 @@ generate(Pairing, T) ->
                                     end, NewAcc, lists:seq(I+1, T))
                 end, list_to_tuple(lists:duplicate(T+1, {})), lists:seq(0, T)).
 
+%% generate a bivariate polynomial of degree T with a fixed term
+generate(Pairing, T, Term) ->
+    insert([1, 1], generate(Pairing, T), Term).
+
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
@@ -28,20 +33,23 @@ degree(Poly) ->
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
     Result = [], %% empty result polynomial
+    %% go in reverse for coefficient rows
     lists:foldl(fun(Row, Acc) ->
                         Temp = dkg_polynomial:mul(Acc, PolyX),
                         dkg_polynomial:add(Temp, tuple_to_list(Row))
-                end, Poly, Result).
+                end, Result, lists:reverse(tuple_to_list(Poly))).
 
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
-                      list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
-              end, Poly)).
+                                    list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
+                            end, tuple_to_list(Poly))).
 
 merge(PolyA, PolyB, MergeFun) ->
-    Degree = max(tuple_size(PolyA), tuple_size(PolyB)),
+    Degree = max(degree(PolyA), degree(PolyB)),
+    %% find the bigger term
+    [LargerPoly|_] = lists:sort(fun(A, B) -> degree(A) > degree(B) end, [PolyA, PolyB]),
     %% why can't we just use set0 here?
-    Zero = erlang_pbc:element_add(access([1,1], PolyB), erlang_pbc:element_neg(access([1,1], PolyB))),
+    Zero = erlang_pbc:element_add(lookup([1,1], LargerPoly), erlang_pbc:element_neg(lookup([1,1], LargerPoly))),
 
     %% make sure both matrices are the same size
     ExpandedPolyA = expand(PolyA, Degree, Zero),
@@ -50,10 +58,10 @@ merge(PolyA, PolyB, MergeFun) ->
     %% run the merge function on every matrix element
     %% use a cartesian product to simplify the iteration
     MergedPoly = lists:foldl(fun({Row, Col}, Acc) ->
-                                     insert([Row, Col], Acc, MergeFun(access([Row, Col], ExpandedPolyA), access([Row, Col], ExpandedPolyB)))
-                             end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree), C <- lists:seq(1, Degree)]),
+                                     insert([Row, Col], Acc, MergeFun(lookup([Row, Col], ExpandedPolyA), lookup([Row, Col], ExpandedPolyB)))
+                             end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]),
 
-    %% trim any leading coefficents that are 0
+    %% trim any leading coefficients that are 0
     %% and delete any rows at the end that are all 0s
     prune(MergedPoly).
 
@@ -63,8 +71,8 @@ expand(Poly, Degree, Padding) ->
             Poly;
         false ->
             list_to_tuple(lists:map(fun(R) ->
-                              pad_row(R, Degree, Padding)
-                      end, tuple_to_list(Poly)) ++ lists:duplicate(Degree - degree(Poly), list_to_tuple(lists:duplicate(Degree+1, Padding))))
+                                            pad_row(R, Degree, Padding)
+                                    end, tuple_to_list(Poly)) ++ lists:duplicate(Degree - degree(Poly), list_to_tuple(lists:duplicate(Degree+1, Padding))))
     end.
 
 pad_row(R, Degree, Padding) ->
@@ -89,11 +97,11 @@ prune(Poly) ->
 
     NewDimension = max(Height, Width),
     HeightAdjustedPoly = lists:sublist(tuple_to_list(Poly), NewDimension),
-    lists:map(fun(Row) ->
-                      list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
-              end, HeightAdjustedPoly).
+    list_to_tuple(lists:map(fun(Row) ->
+                                    list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
+                            end, HeightAdjustedPoly)).
 
-access([Row, Col], Poly) ->
+lookup([Row, Col], Poly) ->
     element(Col, element(Row, Poly)).
 
 insert([Row, Col], Poly, Val) ->
