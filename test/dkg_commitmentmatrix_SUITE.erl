@@ -10,13 +10,14 @@ all() ->
     [verify_poly_test, verify_point_test].
 
 init_per_testcase(_, Config) ->
-    Config.
+    Pairing = erlang_pbc:group_new('SS512'),
+    [{pairing, Pairing} | Config].
 
 end_per_testcase(_, Config) ->
     Config.
 
-verify_poly_test(_Config) ->
-    Pairing = erlang_pbc:group_new('SS512'),
+verify_poly_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     BiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
     CommitmentMatrix = dkg_commitmentmatrix:new(Pairing, BiPoly),
@@ -25,8 +26,8 @@ verify_poly_test(_Config) ->
                               dkg_commitmentmatrix:verify_poly(CommitmentMatrix, I, Poly)
                       end, TaggedPolys)).
 
-verify_point_test(_Config) ->
-    Pairing = erlang_pbc:group_new('SS512'),
+verify_point_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     RandomBiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
     CommitmentMatrix = dkg_commitmentmatrix:new(Pairing, RandomBiPoly),
