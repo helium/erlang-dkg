@@ -61,7 +61,7 @@ merge(PolyA, PolyB, MergeFun) ->
                                      insert([Row, Col], Acc, MergeFun(lookup([Row, Col], ExpandedPolyA), lookup([Row, Col], ExpandedPolyB)))
                              end, ExpandedPolyA, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]),
 
-    %% trim any leading coefficents that are 0
+    %% trim any leading coefficients that are 0
     %% and delete any rows at the end that are all 0s
     prune(MergedPoly).
 

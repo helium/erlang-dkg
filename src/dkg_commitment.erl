@@ -41,8 +41,8 @@ interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
                                  case maps:is_key(Index) of
                                      false ->
                                          %% Node ${Index} has not sent us a share, interpolate it
-                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), 0),
-                                         LagrangePoly = dkg_lagrange:coefficents(Indices, Alpha),
+                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
+                                         LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
                                          InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
                                          [ InterpolatedShare | Acc];
                                      true ->
