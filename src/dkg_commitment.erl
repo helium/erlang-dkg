@@ -29,15 +29,30 @@ public_key_share(Commitment, NodeID) ->
 verify_point(Commitment, SenderID, VerifierID, Point) ->
     dkg_commitmentmatrix:verify_point(Commitment#commitment.matrix, SenderID, VerifierID, Point).
 
-interpolate(Commitment, EchoOrReady, _ActiveNodes) ->
-    _Map = case EchoOrReady of
+interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
+    Map = case EchoOrReady of
                echo -> Commitment#commitment.echoes;
                ready -> Commitment#commitment.readies
            end,
-    %% TODO
-    ok.
+    {Indices0, Elements} = lists:unzip(maps:to_list(Map)),
+    %% turn the node IDs into PBC elements
+    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
+    Shares = lists:foldl(fun(Index, Acc) ->
+                                 case maps:is_key(Index) of
+                                     false ->
+                                         %% Node ${Index} has not sent us a share, interpolate it
+                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), 0),
+                                         LagrangePoly = dkg_lagrange:coefficents(Indices, Alpha),
+                                         InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
+                                         [ InterpolatedShare | Acc];
+                                     true ->
+                                         %% Node ${Index} has sent us a share
+                                         [ maps:get(Index, Map) | Acc]
+                                 end
+                         end, [], [0 | ActiveNodeIDs]), %% note that we also evaluate at 0
+    lists:reverse(Shares).
 
-add_echo(Commitment = #commitment{echoes=Echoes}, NodeID, Echo) ->
+add_echo(Commitment = #commitment{echoes=Echoes}, NodeID, Echo) when NodeID /= 0 ->
     case maps:is_key(NodeID, Echoes) of
         true ->
             {false, Commitment};
@@ -45,7 +60,7 @@ add_echo(Commitment = #commitment{echoes=Echoes}, NodeID, Echo) ->
             {true, Commitment#commitment{echoes = maps:put(NodeID, Echo, Echoes)}}
     end.
 
-add_ready(Commitment = #commitment{readies=Readies}, NodeID, Ready) ->
+add_ready(Commitment = #commitment{readies=Readies}, NodeID, Ready) when NodeID /= 0 ->
     case maps:is_key(NodeID, Readies) of
         true ->
             {false, Commitment};
