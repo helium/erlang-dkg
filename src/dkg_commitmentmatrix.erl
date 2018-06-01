@@ -1,14 +1,13 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, new/3, lookup/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
+-export([new/2, lookup/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
 
-new(Pairing, T) ->
+new(Pairing, T) when is_integer(T) ->
     One = erlang_pbc:element_set(1, erlang_pbc:element_new('G1', Pairing)),
     lists:foldl(fun(_, Acc) ->
                         erlang:append_element(list_to_tuple(lists:duplicate(T+1, One)), Acc)
-                end, {}, lists:seq(0, T)).
-
-new(Pairing, T, BiPoly) ->
+                end, {}, lists:seq(0, T));
+new(Pairing, BiPoly) when is_tuple(BiPoly) ->
     T = dkg_bipolynomial:degree(BiPoly),
     G1 = erlang_pbc:element_new('G1', Pairing),
     %% TODO obviously use something appropriate here
@@ -51,7 +50,7 @@ verify_poly(Matrix, VerifierID, Poly) ->
                         E1 = erlang_pbc:element_pow(U, lists:nth(L, Poly)),
                         E2 = lists:foldl(fun(J, Acc2) ->
                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([J, L], Matrix))
-                                         end, erlang_pbc:element_set(1, U), lists:seq(1, tuple_size(Matrix))),
+                                         end, erlang_pbc:element_set(U, 1), lists:reverse(lists:seq(1, tuple_size(Matrix)))),
                         erlang_pbc:element_cmp(E1, E2)
                 end, true, lists:seq(1, length(Poly))).
 
