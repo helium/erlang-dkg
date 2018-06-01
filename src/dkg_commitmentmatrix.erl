@@ -62,7 +62,6 @@ verify_point(Matrix, SenderID, VerifierID, Point) ->
     %% TODO obviously use something appropriate here
     U = erlang_pbc:element_from_hash(G1, <<"lol">>),
 
-
     Ga = erlang_pbc:element_pow(U, Point),
     Res = lists:foldl(fun(II, Acc) ->
                               R = erlang_pbc:element_pow(Acc, M),
