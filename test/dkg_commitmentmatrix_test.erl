@@ -23,26 +23,13 @@ verify_point_test() ->
                                 true ->
                                     %% verify_poly succeeded, check verify_point for verifiers
                                     lists:map(fun({VerifierId, Poly2}) ->
-                                                      case VerifierId /= SenderId of
-                                                          true ->
-                                                              %% verifier different than sender
-                                                              %% check verify_point
-                                                              Point = dkg_polynomial:apply(Poly2, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), SenderId)),
-                                                              case dkg_commitmentmatrix:verify_point(CommitmentMatrix, SenderId, VerifierId, Point) of
-                                                                  true ->
-                                                                      %% verify_point succeeded
-                                                                      true;
-                                                                  false ->
-                                                                      false
-                                                              end;
-                                                          false ->
-                                                              false
-                                                      end
+                                                      Point = dkg_polynomial:apply(Poly2, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), SenderId)),
+                                                      dkg_commitmentmatrix:verify_point(CommitmentMatrix, SenderId, VerifierId, Point)
                                               end, TaggedPolys);
                                 false ->
                                     false
                             end
                     end, TaggedPolys),
     io:format("Res: ~p~n", [Res]),
-    ?assert(false),
+    ?assert(lists:all(fun(X) -> X end, lists:flatten(Res))),
     ok.
