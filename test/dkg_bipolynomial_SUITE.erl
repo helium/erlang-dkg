@@ -1,15 +1,40 @@
--module(dkg_bipolynomial_test).
+-module(dkg_bipolynomial_SUITE).
+-compile({no_auto_import,[apply/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
-generate_with_constant_term_test() ->
+-export([all/0, init_per_testcase/2, end_per_testcase/2]).
+
+-export([generate_with_constant_term_test/1,
+         self_subtract_test/1,
+         add_zero_test/1,
+         subtract_zero_test/1,
+         add_different_sizes_test/1,
+         apply_test/1]).
+
+all() ->
+    [generate_with_constant_term_test,
+     self_subtract_test,
+     add_zero_test,
+     subtract_zero_test,
+     add_different_sizes_test,
+     apply_test].
+
+init_per_testcase(_, Config) ->
     Pairing = erlang_pbc:group_new('SS512'),
+    [{pairing, Pairing} | Config].
+
+end_per_testcase(_, Config) ->
+    Config.
+
+generate_with_constant_term_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     FortyTwo = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 42),
     Poly = dkg_bipolynomial:generate(Pairing, 5, FortyTwo),
     ?assertEqual(FortyTwo, dkg_bipolynomial:lookup([1, 1], Poly)).
 
-self_subtract_test() ->
-    Pairing = erlang_pbc:group_new('SS512'),
+self_subtract_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Poly = dkg_bipolynomial:generate(Pairing, 5),
     io:format("Poly: ~p~n", [dkg_bipolynomial:print(Poly)]),
     %% subtracting a polynomial from itself should yield all 0s
@@ -19,8 +44,8 @@ self_subtract_test() ->
     ?assertEqual(0, tuple_size(ZeroPoly)),
     ok.
 
-add_zero_test() ->
-    Pairing = erlang_pbc:group_new('SS512'),
+add_zero_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Poly = dkg_bipolynomial:generate(Pairing, 5),
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
     %% adding a zeropolynomial to polynomial should be the same polynomial
@@ -30,8 +55,8 @@ add_zero_test() ->
     ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroAddedPoly)),
     ok.
 
-add_different_sizes_test() ->
-    Pairing = erlang_pbc:group_new('SS512'),
+add_different_sizes_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     PolyA = dkg_bipolynomial:generate(Pairing, 5),
     PolyB = dkg_bipolynomial:generate(Pairing, 8),
     AddedPoly = dkg_bipolynomial:add(PolyA, PolyB),
@@ -43,9 +68,8 @@ add_different_sizes_test() ->
     ?assertEqual(dkg_bipolynomial:print(PolyA), dkg_bipolynomial:print(SubtractedPoly)),
     ok.
 
-
-subrtract_zero_test() ->
-    Pairing = erlang_pbc:group_new('SS512'),
+subtract_zero_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Poly = dkg_bipolynomial:generate(Pairing, 5),
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
     %% subtracting a zeropolynomial to polynomial should be the same polynomial
@@ -55,8 +79,8 @@ subrtract_zero_test() ->
     ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroSubtractedPoly)),
     ok.
 
-apply_test() ->
-    Pairing = erlang_pbc:group_new('SS512'),
+apply_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
     Five = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 5),
     Six = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 6),
     BiPoly = dkg_bipolynomial:generate(Pairing, 5),

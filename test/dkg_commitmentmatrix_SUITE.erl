@@ -1,8 +1,21 @@
--module(dkg_commitmentmatrix_test).
+-module(dkg_commitmentmatrix_SUITE).
+-compile({no_auto_import,[apply/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
-verify_poly_test() ->
+-export([all/0, init_per_testcase/2, end_per_testcase/2]).
+-export([verify_poly_test/1, verify_point_test/1]).
+
+all() ->
+    [verify_poly_test, verify_point_test].
+
+init_per_testcase(_, Config) ->
+    Config.
+
+end_per_testcase(_, Config) ->
+    Config.
+
+verify_poly_test(_Config) ->
     Pairing = erlang_pbc:group_new('SS512'),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     BiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
@@ -12,7 +25,7 @@ verify_poly_test() ->
                               dkg_commitmentmatrix:verify_poly(CommitmentMatrix, I, Poly)
                       end, TaggedPolys)).
 
-verify_point_test() ->
+verify_point_test(_Config) ->
     Pairing = erlang_pbc:group_new('SS512'),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     RandomBiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
