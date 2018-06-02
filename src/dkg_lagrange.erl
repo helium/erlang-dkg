@@ -27,10 +27,10 @@ coefficients(Indices, Alpha) ->
                               end, [], enumerate(Indices))).
 
 apply_g1(Coefficients, Shares) ->
-    Zero = erlang_pbc:element_set(erlang_pbc:element_new('G1', hd(Coefficients)), 1),
+    One = erlang_pbc:element_set(erlang_pbc:element_new('G1', hd(Coefficients)), 1),
     lists:foldl(fun({Coefficient, Share}, Acc) ->
                         erlang_pbc:element_mul(Acc, erlang_pbc:element_pow(Share, Coefficient))
-                end, Zero, lists:zip(Coefficients, Shares)).
+                end, One, lists:zip(Coefficients, Shares)).
 
 apply_zr(Coefficients, Shares) ->
     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Coefficients)), 0),
