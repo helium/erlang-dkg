@@ -82,7 +82,6 @@ public_key_share(Matrix, NodeID) ->
                         R = erlang_pbc:element_pow(Acc, M),
                         Row = lists:foldl(fun(J, Acc2) ->
                                                   erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                          end, G1, lists:seq(tuple_size(Matrix))),
+                                          end, G1, lists:seq(1, tuple_size(Matrix))),
                         erlang_pbc:element_mul(R, Row)
-                end, G1, lists:seq(tuple_size(Matrix))).
-
+                end, G1, lists:seq(1, tuple_size(Matrix))).
