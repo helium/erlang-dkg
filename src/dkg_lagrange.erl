@@ -1,6 +1,17 @@
 -module(dkg_lagrange).
 
--export([coefficients/2, apply_g1/2, apply_zr/2]).
+-export([interpolate/3,
+         coefficients/2,
+         apply_g1/2,
+         apply_zr/2]).
+
+interpolate(Poly, Indices, Alpha) ->
+    Coefficients = coefficients(Indices, Alpha),
+    Shares = [ dkg_polynomial:apply(Poly, Index)  || Index <- lists:seq(1, length(Indices)) ],
+    %% XXX: interpolate is done on G1 since the same group is used in the
+    %% public_key_shares in the dkg_commitmentmatrix
+    %% TODO: maybe move the group to function call?
+    dkg_lagrange:apply_g1(Coefficients, Shares).
 
 coefficients(Indices, Alpha) ->
     One = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Alpha), 1),
