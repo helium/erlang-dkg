@@ -39,4 +39,4 @@ apply_zr(Coefficients, Shares) ->
                 end, Zero, lists:zip(Coefficients, Shares)).
 
 enumerate(List) ->
-    lists:zip(lists:seq(0, length(List) - 1), List).
+    lists:zip(lists:seq(1, length(List)), List).

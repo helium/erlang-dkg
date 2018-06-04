@@ -6,11 +6,15 @@
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([verify_poly_test/1,
          public_key_share_test/1,
+         matrix_comparison_test/1,
+         new_matrix_test/1,
          verify_point_test/1]).
 
 all() ->
     [verify_poly_test,
      verify_point_test,
+     matrix_comparison_test,
+     new_matrix_test,
      public_key_share_test].
 
 init_per_testcase(_, Config) ->
@@ -19,6 +23,12 @@ init_per_testcase(_, Config) ->
 
 end_per_testcase(_, Config) ->
     Config.
+
+new_matrix_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
+    BiPoly = dkg_bipolynomial:generate(Pairing, 4),
+    io:format("BiPoly: ~p~n", [dkg_bipolynomial:print(BiPoly)]),
+    ok.
 
 verify_poly_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
@@ -71,4 +81,21 @@ public_key_share_test(Config) ->
     CalculatedSecret = dkg_lagrange:interpolate(PublicKeySharePolynomial, Indices, Alpha),
     io:format("CalculatedSecret: ~p~n", [erlang_pbc:element_to_string(CalculatedSecret)]),
     ?assert(erlang_pbc:element_cmp(KnownSecret, CalculatedSecret)),
+    ok.
+
+matrix_comparison_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
+    Secret1 = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
+    io:format("Secret1: ~p~n", [erlang_pbc:element_to_string(Secret1)]),
+    RandomBiPoly1 = dkg_bipolynomial:generate(Pairing, 5, Secret1),
+    io:format("RandomBiPoly1: ~p~n", [dkg_bipolynomial:print(RandomBiPoly1)]),
+    CommitmentMatrix1 = dkg_commitmentmatrix:new(Pairing, RandomBiPoly1),
+    io:format("CommitmentMatrix1: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix1)]),
+    Secret2 = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
+    io:format("Secret2: ~p~n", [erlang_pbc:element_to_string(Secret2)]),
+    RandomBiPoly2 = dkg_bipolynomial:generate(Pairing, 5, Secret2),
+    io:format("RandomBiPoly2: ~p~n", [dkg_bipolynomial:print(RandomBiPoly2)]),
+    CommitmentMatrix2 = dkg_commitmentmatrix:new(Pairing, RandomBiPoly2),
+    io:format("CommitmentMatrix2: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix2)]),
+    ?assertEqual(false, dkg_commitmentmatrix:cmp(CommitmentMatrix1, CommitmentMatrix2)),
     ok.

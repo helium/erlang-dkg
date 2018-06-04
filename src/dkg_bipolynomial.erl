@@ -1,6 +1,14 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, generate/3, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
+-export([generate/2,
+         generate/3,
+         add/2,
+         sub/2,
+         degree/1,
+         apply/2,
+         print/1,
+         cmp/2,
+         lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
 %% generate a bivariate polynomial of degree T
@@ -29,6 +37,15 @@ sub(PolyA, PolyB) ->
 
 degree(Poly) ->
     tuple_size(Poly) - 1.
+
+cmp(PolyA, PolyB) ->
+    %% checks f(x, y) - g(x, y) = 0
+    %% subtracting a polynomial from itself should yield all 0s
+    ZeroPoly = dkg_bipolynomial:sub(PolyA, PolyB),
+    case tuple_size(ZeroPoly) of
+        0 -> true;
+        _ -> false
+    end.
 
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0

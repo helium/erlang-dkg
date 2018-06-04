@@ -10,6 +10,7 @@
          add_zero_test/1,
          subtract_zero_test/1,
          add_different_sizes_test/1,
+         negative_comparison_test/1,
          apply_test/1]).
 
 all() ->
@@ -18,6 +19,7 @@ all() ->
      add_zero_test,
      subtract_zero_test,
      add_different_sizes_test,
+     negative_comparison_test,
      apply_test].
 
 init_per_testcase(_, Config) ->
@@ -52,7 +54,7 @@ add_zero_test(Config) ->
     ZeroAddedPoly = dkg_bipolynomial:add(Poly, ZeroPoly),
     io:format("Poly: ~p~n", [Poly]),
     io:format("ZeroAddedPoly: ~p~n", [ZeroAddedPoly]),
-    ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroAddedPoly)),
+    ?assert(dkg_bipolynomial:cmp(Poly, ZeroAddedPoly)),
     ok.
 
 add_different_sizes_test(Config) ->
@@ -65,7 +67,7 @@ add_different_sizes_test(Config) ->
     %% if we subtract B from the result, we should get back A with degree 5
     SubtractedPoly = dkg_bipolynomial:sub(AddedPoly, PolyB),
     ?assertEqual(5, dkg_bipolynomial:degree(SubtractedPoly)),
-    ?assertEqual(dkg_bipolynomial:print(PolyA), dkg_bipolynomial:print(SubtractedPoly)),
+    ?assert(dkg_bipolynomial:cmp(PolyA, SubtractedPoly)),
     ok.
 
 subtract_zero_test(Config) ->
@@ -76,7 +78,7 @@ subtract_zero_test(Config) ->
     ZeroSubtractedPoly = dkg_bipolynomial:sub(Poly, ZeroPoly),
     io:format("Poly: ~p~n", [Poly]),
     io:format("ZeroSubtractedPoly: ~p~n", [ZeroSubtractedPoly]),
-    ?assertEqual(dkg_bipolynomial:print(Poly), dkg_bipolynomial:print(ZeroSubtractedPoly)),
+    ?assert(dkg_bipolynomial:cmp(Poly, ZeroSubtractedPoly)),
     ok.
 
 apply_test(Config) ->
@@ -90,4 +92,13 @@ apply_test(Config) ->
 
     ResultA = dkg_polynomial:apply(PolyA, Six),
     ResultB = dkg_polynomial:apply(PolyB, Five),
-    ?assert(erlang_pbc:element_cmp(ResultA, ResultB)).
+    ?assert(erlang_pbc:element_cmp(ResultA, ResultB)),
+    ok.
+
+negative_comparison_test(Config) ->
+    Pairing = proplists:get_value(pairing, Config),
+    PolyA = dkg_bipolynomial:generate(Pairing, 5),
+    PolyB = dkg_bipolynomial:add(PolyA, PolyA),
+    %% since PolyA /= 2*PolyA
+    ?assertEqual(false, dkg_bipolynomial:cmp(PolyA, PolyB)),
+    ok.

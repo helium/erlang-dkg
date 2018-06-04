@@ -1,7 +1,18 @@
 -module(dkg_polynomial).
 -compile({no_auto_import,[apply/2]}).
 
--export([generate/2, generate/3, generate/4, add/2, sub/2, mul/2, apply/2, print/1]).
+-export([generate/2,
+         generate/3,
+         generate/4,
+         add/2,
+         sub/2,
+         mul/2,
+         apply/2,
+         cmp/2,
+         degree/1,
+         is_zero/1,
+         is_equal/2,
+         print/1]).
 
 %% Create a random polynomial of degree t >= 0
 generate(Pairing, T) ->
@@ -20,6 +31,23 @@ generate(Pairing, T, Index, Term) ->
     NewHead = erlang_pbc:element_add(erlang_pbc:element_sub(Head, Val), Term),
     [NewHead | Tail].
 
+degree(Poly) ->
+    %% Different from the regular degree of a poly
+    %% This is degree + 1
+    length(Poly).
+
+is_zero(Poly) ->
+    %% XXX: check all elements are 0 which they will be if the length(poly) == 0
+    %% I don't understand why this is needed
+    %% lists:all(fun erlang_pbc:element_is0/1, Poly) andalso length(Poly) == 0.
+    length(Poly) == 0.
+
+is_equal(PolyA, PolyB) ->
+    %% check all elements are equal for polyA and polyB
+    lists:all(fun({A, B}) ->
+                      erlang_pbc:element_cmp(A, B)
+              end, lists:zip(PolyA, PolyB)).
+
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
@@ -35,6 +63,14 @@ mul(PolyA, PolyB) ->
                         add(Acc, Temp)
                 end, [], PolyB).
 
+cmp(PolyA, PolyB) ->
+    %% check f(x) - g(x) = 0,
+    %% check that each element is the same the original
+    %% and the degree of polyA = polyB
+    dkg_polynomial:is_zero(dkg_polynomial:sub(PolyA, PolyB)) andalso
+    is_equal(PolyA, PolyB) andalso
+    degree(PolyA) == degree(PolyB).
+
 %% Apply a polynomial at a point x using Horner's rule
 apply(Poly, X) ->
     %% why can't we just use set0 here?
@@ -49,7 +85,7 @@ print(Poly) ->
 
 
 merge(PolyA, PolyB, MergeFun) ->
-    Degree = max(length(PolyA), length(PolyB)),
+    Degree = max(degree(PolyA), degree(PolyB)),
     %% why can't we just use set0 here?
     Zero = erlang_pbc:element_add(hd(PolyA++PolyB), erlang_pbc:element_neg(hd(PolyA++PolyB))),
 

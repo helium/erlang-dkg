@@ -3,6 +3,8 @@
 -export([new/2, lookup/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
 
 new(Pairing, T) when is_integer(T) ->
+    %% XXX: what does this function do or mean?
+    %% looks like its generating a bipolynomial instead of a matrix?
     One = erlang_pbc:element_set(1, erlang_pbc:element_new('G1', Pairing)),
     lists:foldl(fun(_, Acc) ->
                         erlang:append_element(list_to_tuple(lists:duplicate(T+1, One)), Acc)
