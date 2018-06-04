@@ -3,6 +3,8 @@
 -export([new/2, lookup/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
 
 new(Pairing, T) when is_integer(T) ->
+    %% XXX: what does this function do or mean?
+    %% looks like its generating a bipolynomial instead of a matrix?
     One = erlang_pbc:element_set(1, erlang_pbc:element_new('G1', Pairing)),
     lists:foldl(fun(_, Acc) ->
                         erlang:append_element(list_to_tuple(lists:duplicate(T+1, One)), Acc)
@@ -78,11 +80,11 @@ public_key_share(Matrix, NodeID) ->
     G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', lookup([1, 1], Matrix)), 1),
 
     %% return the public key share
+    %% NOTE: C++ traverses the matrix in reverse, following the same
     lists:foldl(fun(II, Acc) ->
                         R = erlang_pbc:element_pow(Acc, M),
                         Row = lists:foldl(fun(J, Acc2) ->
                                                   erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                          end, G1, lists:seq(tuple_size(Matrix))),
+                                          end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
                         erlang_pbc:element_mul(R, Row)
-                end, G1, lists:seq(tuple_size(Matrix))).
-
+                end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))).

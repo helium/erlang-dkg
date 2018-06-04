@@ -1,6 +1,15 @@
 -module(dkg_bipolynomial).
 
--export([generate/2, generate/3, add/2, sub/2, degree/1, apply/2, print/1, lookup/2]).
+-export([generate/2,
+         generate/3,
+         add/2,
+         sub/2,
+         degree/1,
+         apply/2,
+         print/1,
+         cmp/2,
+         is_zero/1,
+         lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
 %% generate a bivariate polynomial of degree T
@@ -27,8 +36,21 @@ add(PolyA, PolyB) ->
 sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
+is_zero(Poly) ->
+    tuple_size(Poly) == 0.
+
 degree(Poly) ->
     tuple_size(Poly) - 1.
+
+cmp(PolyA, PolyB) ->
+    %% check whether degree(PolyA) == degree(PolyB)
+    %% and all the coefficients should match
+    degree(PolyA) == degree(PolyB)
+    andalso
+    lists:all(fun(X) ->
+                      X
+              end,
+              [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))]).
 
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
