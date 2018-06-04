@@ -8,6 +8,7 @@
          apply/2,
          print/1,
          cmp/2,
+         is_zero/1,
          lookup/2]).
 
 -spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
@@ -35,17 +36,22 @@ add(PolyA, PolyB) ->
 sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
+is_zero(Poly) ->
+    tuple_size(Poly) == 0.
+
 degree(Poly) ->
     tuple_size(Poly) - 1.
 
 cmp(PolyA, PolyB) ->
     %% checks f(x, y) - g(x, y) = 0
     %% subtracting a polynomial from itself should yield all 0s
-    ZeroPoly = dkg_bipolynomial:sub(PolyA, PolyB),
-    case tuple_size(ZeroPoly) of
-        0 -> true;
-        _ -> false
-    end.
+    %% and all the coefficients should match
+    lists:all(fun(X) ->
+                      X
+              end,
+              [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))])
+    andalso
+    is_zero(dkg_bipolynomial:sub(PolyA, PolyB)).
 
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
