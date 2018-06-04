@@ -63,10 +63,8 @@ mul(PolyA, PolyB) ->
 
 cmp(PolyA, PolyB) ->
     %% check the degree(PolyA) == degree(PolyB)
-    %% check f(x) - g(x) = 0,
     %% check that each element is the same the original
     degree(PolyA) == degree(PolyB) andalso
-    dkg_polynomial:is_zero(dkg_polynomial:sub(PolyA, PolyB)) andalso
     is_equal(PolyA, PolyB).
 
 %% Apply a polynomial at a point x using Horner's rule

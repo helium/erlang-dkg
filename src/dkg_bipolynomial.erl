@@ -44,17 +44,13 @@ degree(Poly) ->
 
 cmp(PolyA, PolyB) ->
     %% check whether degree(PolyA) == degree(PolyB)
-    %% checks f(x, y) - g(x, y) = 0
-    %% subtracting a polynomial from itself should yield all 0s
     %% and all the coefficients should match
     degree(PolyA) == degree(PolyB)
     andalso
     lists:all(fun(X) ->
                       X
               end,
-              [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))])
-    andalso
-    is_zero(dkg_bipolynomial:sub(PolyA, PolyB)).
+              [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))]).
 
 apply(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
