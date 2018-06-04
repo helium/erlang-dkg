@@ -32,9 +32,7 @@ generate(Pairing, T, Index, Term) ->
     [NewHead | Tail].
 
 degree(Poly) ->
-    %% Different from the regular degree of a poly
-    %% This is degree + 1
-    length(Poly).
+    length(Poly) - 1.
 
 is_zero(Poly) ->
     %% XXX: check all elements are 0 which they will be if the length(poly) == 0
@@ -64,12 +62,12 @@ mul(PolyA, PolyB) ->
                 end, [], PolyB).
 
 cmp(PolyA, PolyB) ->
+    %% check the degree(PolyA) == degree(PolyB)
     %% check f(x) - g(x) = 0,
     %% check that each element is the same the original
-    %% and the degree of polyA = polyB
+    degree(PolyA) == degree(PolyB) andalso
     dkg_polynomial:is_zero(dkg_polynomial:sub(PolyA, PolyB)) andalso
-    is_equal(PolyA, PolyB) andalso
-    degree(PolyA) == degree(PolyB).
+    is_equal(PolyA, PolyB).
 
 %% Apply a polynomial at a point x using Horner's rule
 apply(Poly, X) ->
@@ -85,7 +83,7 @@ print(Poly) ->
 
 
 merge(PolyA, PolyB, MergeFun) ->
-    Degree = max(degree(PolyA), degree(PolyB)),
+    Degree = max(degree(PolyA) + 1, degree(PolyB) + 1),
     %% why can't we just use set0 here?
     Zero = erlang_pbc:element_add(hd(PolyA++PolyB), erlang_pbc:element_neg(hd(PolyA++PolyB))),
 

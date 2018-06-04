@@ -7,14 +7,12 @@
 -export([verify_poly_test/1,
          public_key_share_test/1,
          matrix_comparison_test/1,
-         new_matrix_test/1,
          verify_point_test/1]).
 
 all() ->
     [verify_poly_test,
      verify_point_test,
      matrix_comparison_test,
-     new_matrix_test,
      public_key_share_test].
 
 init_per_testcase(_, Config) ->
@@ -23,12 +21,6 @@ init_per_testcase(_, Config) ->
 
 end_per_testcase(_, Config) ->
     Config.
-
-new_matrix_test(Config) ->
-    Pairing = proplists:get_value(pairing, Config),
-    BiPoly = dkg_bipolynomial:generate(Pairing, 4),
-    io:format("BiPoly: ~p~n", [dkg_bipolynomial:print(BiPoly)]),
-    ok.
 
 verify_poly_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),

@@ -43,9 +43,12 @@ degree(Poly) ->
     tuple_size(Poly) - 1.
 
 cmp(PolyA, PolyB) ->
+    %% check whether degree(PolyA) == degree(PolyB)
     %% checks f(x, y) - g(x, y) = 0
     %% subtracting a polynomial from itself should yield all 0s
     %% and all the coefficients should match
+    degree(PolyA) == degree(PolyB)
+    andalso
     lists:all(fun(X) ->
                       X
               end,

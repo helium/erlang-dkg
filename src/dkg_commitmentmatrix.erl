@@ -80,10 +80,11 @@ public_key_share(Matrix, NodeID) ->
     G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', lookup([1, 1], Matrix)), 1),
 
     %% return the public key share
+    %% NOTE: C++ traverses the matrix in reverse, following the same
     lists:foldl(fun(II, Acc) ->
                         R = erlang_pbc:element_pow(Acc, M),
                         Row = lists:foldl(fun(J, Acc2) ->
                                                   erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                          end, G1, lists:seq(1, tuple_size(Matrix))),
+                                          end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
                         erlang_pbc:element_mul(R, Row)
-                end, G1, lists:seq(1, tuple_size(Matrix))).
+                end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))).
