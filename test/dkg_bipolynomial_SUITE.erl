@@ -38,10 +38,10 @@ generate_with_constant_term_test(Config) ->
 self_subtract_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
     Poly = dkg_bipolynomial:generate(Pairing, 5),
-    io:format("Poly: ~p~n", [dkg_bipolynomial:print(Poly)]),
+    ct:pal("Poly: ~p~n", [dkg_bipolynomial:print(Poly)]),
     %% subtracting a polynomial from itself should yield all 0s
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
-    io:format("ZeroPoly: ~p~n", [dkg_bipolynomial:print(ZeroPoly)]),
+    ct:pal("ZeroPoly: ~p~n", [dkg_bipolynomial:print(ZeroPoly)]),
     %% polynomial should trim any trailing empty fields (ie all of them!)
     ?assertEqual(0, tuple_size(ZeroPoly)),
     ok.
@@ -52,8 +52,8 @@ add_zero_test(Config) ->
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
     %% adding a zeropolynomial to polynomial should be the same polynomial
     ZeroAddedPoly = dkg_bipolynomial:add(Poly, ZeroPoly),
-    io:format("Poly: ~p~n", [Poly]),
-    io:format("ZeroAddedPoly: ~p~n", [ZeroAddedPoly]),
+    ct:pal("Poly: ~p~n", [Poly]),
+    ct:pal("ZeroAddedPoly: ~p~n", [ZeroAddedPoly]),
     ?assert(dkg_bipolynomial:cmp(Poly, ZeroAddedPoly)),
     ok.
 
@@ -76,8 +76,8 @@ subtract_zero_test(Config) ->
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
     %% subtracting a zeropolynomial to polynomial should be the same polynomial
     ZeroSubtractedPoly = dkg_bipolynomial:sub(Poly, ZeroPoly),
-    io:format("Poly: ~p~n", [Poly]),
-    io:format("ZeroSubtractedPoly: ~p~n", [ZeroSubtractedPoly]),
+    ct:pal("Poly: ~p~n", [Poly]),
+    ct:pal("ZeroSubtractedPoly: ~p~n", [ZeroSubtractedPoly]),
     ?assert(dkg_bipolynomial:cmp(Poly, ZeroSubtractedPoly)),
     ok.
 

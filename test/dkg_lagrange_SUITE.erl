@@ -11,11 +11,11 @@ all() ->
 
 init_per_testcase(_, Config) ->
     Indices = lists:seq(1, 4),
-    io:format("Indices: ~p~n", [Indices]),
+    ct:pal("Indices: ~p~n", [Indices]),
     Alpha = 5,
-    io:format("Alpha: ~p~n", [Alpha]),
+    ct:pal("Alpha: ~p~n", [Alpha]),
     Coefficients = coefficients(Indices, Alpha),
-    io:format("Coefficients: ~p~n", [Coefficients]),
+    ct:pal("Coefficients: ~p~n", [Coefficients]),
     [{indices, Indices}, {coefficients, Coefficients}, {alpha, Alpha}| Config].
 
 end_per_testcase(_, Config) ->
@@ -26,9 +26,9 @@ numeric_fx2_test(Config) ->
     Coefficients = proplists:get_value(coefficients, Config),
     %% f(x) = x^2
     RandomShares = [ math:pow(Index, 2)  || Index <- Indices ],
-    io:format("Random Shares: ~p~n", [RandomShares]),
+    ct:pal("Random Shares: ~p~n", [RandomShares]),
     Applied = apply(Coefficients, RandomShares),
-    io:format("Applied: ~p~n", [Applied]),
+    ct:pal("Applied: ~p~n", [Applied]),
     Applied = 25.0.
 
 numeric_random_poly_test(Config) ->
@@ -36,27 +36,27 @@ numeric_random_poly_test(Config) ->
     Coefficients = proplists:get_value(coefficients, Config),
     %% f(x) = 2x^3 + 7x^2 - 6x +5
     RandomShares = [ (2*math:pow(Index, 3)) + (7*math:pow(Index, 2)) - (6*Index) + 5  || Index <- Indices ],
-    io:format("Random Shares: ~p~n", [RandomShares]),
+    ct:pal("Random Shares: ~p~n", [RandomShares]),
     Applied = apply(Coefficients, RandomShares),
-    io:format("Applied: ~p~n", [Applied]),
+    ct:pal("Applied: ~p~n", [Applied]),
     Applied = 400.0.
 
 poly_test(_Config) ->
     Pairing = erlang_pbc:group_new('SS512'),
     Poly = dkg_polynomial:generate(Pairing, 2),
-    io:format("Poly: ~p~n", [dkg_polynomial:print(Poly)]),
+    ct:pal("Poly: ~p~n", [dkg_polynomial:print(Poly)]),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), I) || I <- lists:seq(1, 3) ],
-    io:format("Indices: ~p~n", [dkg_polynomial:print(Indices)]),
+    ct:pal("Indices: ~p~n", [dkg_polynomial:print(Indices)]),
     Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 4),
-    io:format("Alpha: ~p~n", [erlang_pbc:element_to_string(Alpha)]),
+    ct:pal("Alpha: ~p~n", [erlang_pbc:element_to_string(Alpha)]),
     Coefficients = dkg_lagrange:coefficients(Indices, Alpha),
-    io:format("Coefficients: ~p~n", [dkg_polynomial:print(Coefficients)]),
+    ct:pal("Coefficients: ~p~n", [dkg_polynomial:print(Coefficients)]),
     KnownValueAt4 = dkg_polynomial:apply(Poly, 4),
-    io:format("KnownValueAt4: ~p~n", [erlang_pbc:element_to_string(KnownValueAt4)]),
+    ct:pal("KnownValueAt4: ~p~n", [erlang_pbc:element_to_string(KnownValueAt4)]),
     Shares = [ dkg_polynomial:apply(Poly, Index)  || Index <- lists:seq(1, 3) ],
-    io:format("Shares: ~p~n", [dkg_polynomial:print(Shares)]),
+    ct:pal("Shares: ~p~n", [dkg_polynomial:print(Shares)]),
     Applied = dkg_lagrange:apply_zr(Coefficients, Shares),
-    io:format("Applied: ~p~n", [erlang_pbc:element_to_string(Applied)]),
+    ct:pal("Applied: ~p~n", [erlang_pbc:element_to_string(Applied)]),
     ?assert(erlang_pbc:element_cmp(KnownValueAt4, Applied)),
     ok.
 
