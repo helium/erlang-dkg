@@ -1,7 +1,9 @@
 -module(dkg_hybridvss).
 
 -export([init/5,
-         init/6]).
+         init/6,
+         secret/1
+        ]).
 
 -export([handle_msg/3]).
 
@@ -17,7 +19,8 @@
             recv_send = false :: boolean(),
             echoes = #{} :: map(),
             readies = #{} :: map(),
-            commitments = #{} :: #{non_neg_integer() => dkg_commitment:commitment()}
+            commitments = #{} :: #{non_neg_integer() => dkg_commitment:commitment()},
+            secret :: erlang_pbc:element()
          }).
 
 init(Id, N, F, T, Ph) ->
@@ -43,6 +46,7 @@ init(Id, N, F, T, Ph, Curve) ->
 %% [x, y] and φ00 = s
 handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) ->
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', E)),
+    ct:pal("Secret: ~p", [erlang_pbc:element_to_string(Secret)]),
     BiPoly = dkg_bipolynomial:generate(E, T, Secret),
     Commitment = dkg_commitment:new(allnodes(N), E, BiPoly),
 
@@ -51,7 +55,7 @@ handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) 
                              Aj = dkg_bipolynomial:apply(BiPoly, NodeZr),
                              {unicast, Node, {send, {Ph, Commitment, Aj}}}
                      end, allnodes(N)),
-    NewState = State#state{is_dealer=true},
+    NewState = State#state{is_dealer=true, secret=Secret},
     {NewState, {send, Msgs}};
 handle_msg(State, _Sender, share) ->
     {State, {error, already_dealer}};
@@ -82,8 +86,6 @@ handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
 %% for all j ∈ [1, n] do
 %% send the message (Pd, τ, ready, C, a(j)) to Pj
 handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
-
-
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
             Commitment = maps:get(Dealer, Commitments, Commitment0),
@@ -106,7 +108,7 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
                     {State, ok}
             end;
         false ->
-            ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
+            %% ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
             {State, ok}
     end;
 
@@ -121,12 +123,12 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
 %% else if rC = n − t − f then
 %% si ← a(0); output (Pd , τ, out, shared, C, si )
 handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
-    ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
+    %% ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
 
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
             Commitment = maps:get(Dealer, Commitments, Commitment0),
-            ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
+            %% ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
@@ -141,7 +143,7 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commi
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
-                                    SubShare = dkg_commitment:interpolate(NewCommitment, ready, []),
+                                    [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                                     {NewState, {result, {Dealer, Ph, NewCommitment, SubShare}}};
                                 false ->
@@ -153,7 +155,7 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commi
                     {State, ok}
             end;
         false ->
-            ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
+            %% ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
             {State, ok}
     end;
 handle_msg(State, _Sender, Msg) ->
@@ -161,3 +163,7 @@ handle_msg(State, _Sender, Msg) ->
 
 allnodes(N) ->
     lists:seq(1, N).
+
+%% XXX: THIS IS JUST FOR SANITY CHECK, REMOVE THIS
+secret(State) ->
+    State#state.secret.
