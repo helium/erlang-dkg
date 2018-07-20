@@ -17,7 +17,7 @@
             recv_send = false :: boolean(),
             echoes = #{} :: map(),
             readies = #{} :: map(),
-            commitment_map = #{} :: #{non_neg_integer() => dkg_commitment:commitment()}
+            commitments = #{} :: #{non_neg_integer() => dkg_commitment:commitment()}
          }).
 
 init(Id, N, F, T, Ph) ->
@@ -48,20 +48,20 @@ handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) 
     {NewState, {send, Msgs}};
 handle_msg(State, _Sender, share) ->
     {State, {error, already_dealer}};
-handle_msg(State=#state{n=N, recv_send=false, commitment_map=Commitments}, Sender, {send, {Ph, Commitment, A}}) ->
+handle_msg(State=#state{n=N, recv_send=false, commitments=Commitments}, Sender, {send, {Ph, Commitment, A}}) ->
     case dkg_commitment:verify_poly(Commitment, State#state.id, A) of
         true ->
             Msgs = lists:map(fun(Node) ->
                                      {unicast, Node, {echo, {Sender, Ph, Commitment, dkg_polynomial:apply(A, Node)}}}
                              end, allnodes(N)),
-            NewState = State#state{recv_send=true, commitment_map=maps:put(Sender, Commitment, Commitments)},
+            NewState = State#state{recv_send=true, commitments=maps:put(Sender, Commitment, Commitments)},
             {NewState, {send, Msgs}};
         false ->
             {State, {error, failed_dkg_bipolynomial_verify_poly}}
     end;
 handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
     {State, {error, alread_received_send}};
-handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment_map=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
+handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
 
     Commitment = maps:get(Dealer, Commitments, Commitment0),
 
@@ -76,10 +76,10 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment_map=Commitmen
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Dealer, Ph, NewCommitment, dkg_polynomial:apply(Abar, Node)}}}
                                              end, allnodes(N)),
-                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment_map=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                             {NewState, {send, Msgs}};
                         false ->
-                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment_map=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                             {NewState, ok}
                     end;
                 {false, _OldCommitment} ->
@@ -88,7 +88,7 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment_map=Commitmen
         false ->
             {State, ok}
     end;
-handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitment_map=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
+handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
     ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
 
     Commitment = maps:get(Dealer, Commitments, Commitment0),
@@ -105,7 +105,7 @@ handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitment_m
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Dealer, Ph, NewCommitment, dkg_polynomial:apply(Abar, Node)}}}
                                              end, allnodes(N)),
-                            NewState = State#state{readies=maps:put(Sender, true, Readies), commitment_map=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                             {NewState, {send, Msgs}};
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
@@ -113,10 +113,10 @@ handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitment_m
                                     Abar = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                                     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', E), 0),
                                     Share = dkg_polynomial:apply(Abar, Zero),
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment_map=maps:put(Dealer, NewCommitment, Commitments)},
+                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                                     {NewState, {result, {Dealer, Ph, NewCommitment, Share}}};
                                 false ->
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment_map=maps:put(Dealer, NewCommitment, Commitments)},
+                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                                     {NewState, ok}
                             end
                     end;
