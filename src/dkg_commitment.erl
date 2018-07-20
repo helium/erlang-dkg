@@ -6,13 +6,17 @@
           readies=#{} :: map()
          }).
 
--export([new/1, new/2, cmp/2, mul/2, verify_poly/3, public_key_share/2, verify_point/4, interpolate/3, add_echo/3, add_ready/3, num_echoes/1, num_readies/1]).
+-export_type([commitment/0]).
+
+-export([new/1, new/3, cmp/2, mul/2, verify_poly/3, public_key_share/2, verify_point/4, interpolate/3, add_echo/3, add_ready/3, num_echoes/1, num_readies/1]).
+
+-type commitment() :: #commitment{}.
 
 new(_NodeIDs) ->
     #commitment{matrix=dkg_commitmentmatrix:new()}.
 
-new(_NodeIDs, BiPoly) ->
-    #commitment{matrix=dkg_commitmentmatrix:new(BiPoly)}.
+new(_NodeIDs, Pairing, BiPoly) ->
+    #commitment{matrix=dkg_commitmentmatrix:new(Pairing, BiPoly)}.
 
 cmp(CommitmentA, CommitmentB) ->
     dkg_commitmentmatrix:cmp(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
@@ -38,7 +42,7 @@ interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
     %% turn the node IDs into PBC elements
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
     Shares = lists:foldl(fun(Index, Acc) ->
-                                 case maps:is_key(Index) of
+                                 case maps:is_key(Index, Map) of
                                      false ->
                                          %% Node ${Index} has not sent us a share, interpolate it
                                          Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
