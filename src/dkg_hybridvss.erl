@@ -34,6 +34,13 @@ init(Id, N, F, T, Ph, Curve) ->
            u=Generator,
            e=Group}.
 
+
+%% upon a message (Pd, τ, in, share, s): /* only Pd */
+%% choose a symmetric bivariate polynomial φ(x, y) = Pt
+%%  j,`=0 φj` xj y` ∈R ZpC ← {Cj` }tj,`=0 where Cj` = gφj` for j, ` ∈ [0, t]
+%% for all j ∈ [1, n] do
+%% aj (y) ← φ(j, y); send the message (Pd , τ, send, C, aj ) to Pj
+%% [x, y] and φ00 = s
 handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) ->
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', E)),
     BiPoly = dkg_bipolynomial:generate(E, T, Secret),
@@ -48,6 +55,11 @@ handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) 
     {NewState, {send, Msgs}};
 handle_msg(State, _Sender, share) ->
     {State, {error, already_dealer}};
+
+%% upon a message (Pd, τ, send, C, a) from Pd (first time):
+%% if verify-poly(C, i, a) then
+%% for all j ∈ [1, n] do
+%% send the message (Pd , τ, echo, C, a(j)) to Pj
 handle_msg(State=#state{n=N, recv_send=false, commitments=Commitments}, Sender, {send, {Ph, Commitment, A}}) ->
     case dkg_commitment:verify_poly(Commitment, State#state.id, A) of
         true ->
@@ -61,6 +73,14 @@ handle_msg(State=#state{n=N, recv_send=false, commitments=Commitments}, Sender, 
     end;
 handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
     {State, {error, alread_received_send}};
+
+%% upon a message (Pd, τ, echo, C, α) from Pm (first time):
+%% if verify-point(C, i, m, α) then
+%% AC ← AC ∪ {(m, α)}; eC ← eC + 1
+%% if eC = d n+t+1/2 and rC < t + 1 then
+%% Lagrange-interpolate a from AC
+%% for all j ∈ [1, n] do
+%% send the message (Pd, τ, ready, C, a(j)) to Pj
 handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
 
     Commitment = maps:get(Dealer, Commitments, Commitment0),
@@ -88,6 +108,17 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
         false ->
             {State, ok}
     end;
+
+
+%% upon a message (Pd, τ, ready, C, α) from Pm (first time):
+%% if verify-point(C, i, m, α) then
+%% AC ← AC ∪ {(m, α)}; rC ← rC + 1
+%% if rC = t + 1 and eC < n+t+1/2
+%% Lagrange-interpolate a from AC
+%% for all j ∈ [1, n] do
+%% send the message (Pd, τ, ready, C, a(j)) to Pj
+%% else if rC = n − t − f then
+%% si ← a(0); output (Pd , τ, out, shared, C, si )
 handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
     ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
 
