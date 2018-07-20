@@ -129,10 +129,10 @@ handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=
             ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
+                    Abar = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
                          dkg_commitment:num_echoes(NewCommitment) < ceil((N+T+1)/2) of
                         true ->
-                            Abar = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Dealer, Ph, NewCommitment, dkg_polynomial:apply(Abar, Node)}}}
                                              end, allnodes(N)),
@@ -141,7 +141,6 @@ handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
-                                    Abar = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                                     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', E), 0),
                                     Share = dkg_polynomial:apply(Abar, Zero),
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
