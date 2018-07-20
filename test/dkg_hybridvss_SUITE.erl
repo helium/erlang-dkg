@@ -38,5 +38,6 @@ init_test(Config) ->
     States = [NewDealerState | Rest],
     StatesWithId = lists:zip(lists:seq(1, length(States)), States),
     {_FinalStates, _ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
+    ct:pal("ConvergedResults ~p", [_ConvergedResults]),
     ?assert(false),
     ok.

@@ -83,18 +83,18 @@ handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
 %% send the message (Pd, τ, ready, C, a(j)) to Pj
 handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
 
-    Commitment = maps:get(Dealer, Commitments, Commitment0),
 
-    case dkg_commitment:verify_point(Commitment, Id, Sender, A) of
+    case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
+            Commitment = maps:get(Dealer, Commitments, Commitment0),
             case dkg_commitment:add_echo(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_echoes(NewCommitment) == ceil((N+T+1)/2) andalso
                          dkg_commitment:num_readies(NewCommitment) < (T+1) of
                         true ->
-                            Abar = dkg_commitment:interpolate(NewCommitment, echo, allnodes(N)),
+                            Subshares = dkg_commitment:interpolate(NewCommitment, echo, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Dealer, Ph, NewCommitment, dkg_polynomial:apply(Abar, Node)}}}
+                                                     {unicast, Node, {ready, {Dealer, Ph, NewCommitment, lists:nth(Node+1, Subshares)}}}
                                              end, allnodes(N)),
                             NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                             {NewState, {send, Msgs}};
@@ -106,6 +106,7 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
                     {State, ok}
             end;
         false ->
+            ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
             {State, ok}
     end;
 
@@ -119,13 +120,12 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
 %% send the message (Pd, τ, ready, C, a(j)) to Pj
 %% else if rC = n − t − f then
 %% si ← a(0); output (Pd , τ, out, shared, C, si )
-handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
+handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
     ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
 
-    Commitment = maps:get(Dealer, Commitments, Commitment0),
-
-    case dkg_commitment:verify_point(Commitment, Id, Sender, A) of
+    case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
+            Commitment = maps:get(Dealer, Commitments, Commitment0),
             ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
@@ -141,7 +141,7 @@ handle_msg(State=#state{readies=Readies, e=E, n=N, t=T, f=F, id=Id, commitments=
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
-                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', E), 0),
+                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', A), 0),
                                     Share = dkg_polynomial:apply(Abar, Zero),
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
                                     {NewState, {result, {Dealer, Ph, NewCommitment, Share}}};
