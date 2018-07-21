@@ -27,16 +27,15 @@ init(Id, N, F, T, Generator, Session) ->
            n=N,
            f=F,
            t=T,
+           commitment = dkg_commitment:new(allnodes(N), Generator, T),
            session=Session,
            u=Generator}.
 
-%% XXX this seems garbled relative to the paper
 %% upon a message (Pd, τ, in, share, s): /* only Pd */
-%% choose a symmetric bivariate polynomial φ(x, y) = Pt
-%%  j,`=0 φj` xj y` ∈R ZpC ← {Cj` }tj,`=0 where Cj` = gφj` for j, ` ∈ [0, t]
-%% for all j ∈ [1, n] do
-%%     aj (y) ← φ(j, y); send the message (Pd , τ, send, C, aj ) to Pj
-%%     [x, y] and φ00 = s
+%%     choose a symmetric bivariate polynomial φ(x,y) = ∑tj,l=0 φjl x^j y^l ∈R Zp[x,y] and φ00 = s
+%%     C ←{Cjl } t j,l=0 where Cjl = gφ^jl for j,l ∈[0,t]
+%%     for all j ∈ [1,n] do
+%%         aj(y) ← φ(j,y); send the message (Pd, τ, send, C, aj) to Pj
 input(State = #state{session=Session={Dealer,_}, id=Id, u=U, t=T, n=N}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U, T, Secret),
     Commitment = dkg_commitment:new(allnodes(N), U, BiPoly),
@@ -52,17 +51,16 @@ input(_State, _Secret) ->
     {error, not_dealer}.
 
 %% upon a message (Pd, τ, send, C, a) from Pd (first time):
-%% if verify-poly(C, i, a) then
-%%     for all j ∈ [1, n] do
-%%         send the message (Pd , τ, echo, C, a(j)) to Pj
-handle_msg(State=#state{n=N, commitment=undefined, session=Session}, Sender, {send, {Session = {Sender, _}, Commitment, A}}) ->
-    case dkg_commitment:verify_poly(Commitment, State#state.id, A) of
+%%     if verify-poly(C, i, a) then
+%%         for all j ∈ [1, n] do
+%%             send the message (Pd , τ, echo, C, a(j)) to Pj
+handle_msg(State=#state{n=N, session=Session}, Sender, {send, {Session = {Sender, _}, Commitment0, A}}) ->
+    case dkg_commitment:verify_poly(Commitment0, State#state.id, A) of
         true ->
             Msgs = lists:map(fun(Node) ->
-                                     {unicast, Node, {echo, {Session, Commitment, dkg_polynomial:apply(A, Node)}}}
+                                     {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:apply(A, Node)}}}
                              end, allnodes(N)),
-            NewState = State#state{commitment=Commitment},
-            {NewState, {send, Msgs}};
+            {State, {send, Msgs}};
         false ->
             {error, bad_commitment}
     end;
@@ -70,12 +68,12 @@ handle_msg(State, _Sender, {send, {_Session, _Commitment, _A}}) ->
     {State, {error, already_received_commitment}};
 
 %% upon a message (Pd, τ, echo, C, α) from Pm (first time):
-%% if verify-point(C, i, m, α) then
-%% AC ← AC ∪ {(m, α)}; eC ← eC + 1
-%% if eC = d n+t+1/2 and rC < t + 1 then
-%% Lagrange-interpolate a from AC
-%% for all j ∈ [1, n] do
-%% send the message (Pd, τ, ready, C, a(j)) to Pj
+%%     if verify-point(C, i, m, α) then
+%%         AC ← AC ∪ {(m, α)}; eC ← eC + 1
+%%         if eC = d n+t+1/2 and rC < t + 1 then
+%%             Lagrange-interpolate a from AC
+%%             for all j ∈ [1, n] do
+%%                  send the message (Pd, τ, ready, C, a(j)) to Pj
 handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, session=Session}, Sender, {echo, {Session, Commitment0, A}}) ->
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
@@ -86,7 +84,7 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, s
                         true ->
                             Subshares = dkg_commitment:interpolate(NewCommitment, echo, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Session, NewCommitment, lists:nth(Node+1, Subshares)}}}
+                                                     {unicast, Node, {ready, {Session, Commitment0, lists:nth(Node+1, Subshares)}}}
                                              end, allnodes(N)),
                             NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
@@ -98,26 +96,22 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, s
                     {State, ok}
             end;
         false ->
-            %% ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
             {State, ok}
     end;
 
 
 %% upon a message (Pd, τ, ready, C, α) from Pm (first time):
-%% if verify-point(C, i, m, α) then
-%% AC ← AC ∪ {(m, α)}; rC ← rC + 1
-%% if rC = t + 1 and eC < n+t+1/2
-%% Lagrange-interpolate a from AC
-%% for all j ∈ [1, n] do
-%% send the message (Pd, τ, ready, C, a(j)) to Pj
-%% else if rC = n − t − f then
-%% si ← a(0); output (Pd , τ, out, shared, C, si )
+%%     if verify-point(C, i, m, α) then
+%%         AC ← AC ∪ {(m, α)}; rC ← rC + 1
+%%         if rC = t + 1 and eC < n+t+1/2
+%%             Lagrange-interpolate a from AC
+%%             for all j ∈ [1, n] do
+%%                 send the message (Pd, τ, ready, C, a(j)) to Pj
+%%     else if rC = n − t − f then
+%%         si ← a(0); output (Pd , τ, out, shared, C, si )
 handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, Commitment0, A}}) ->
-    %% ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
-
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
-            %% ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
@@ -125,7 +119,7 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                         true ->
                             SubShares = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Session, NewCommitment, lists:nth(Node+1, SubShares)}}}
+                                                     {unicast, Node, {ready, {Session, Commitment0, lists:nth(Node+1, SubShares)}}}
                                              end, allnodes(N)),
                             NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
@@ -134,7 +128,7 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
-                                    {NewState, {result, {Session, NewCommitment, SubShare}}};
+                                    {NewState, {result, {Session, Commitment0, SubShare}}};
                                 false ->
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                                     {NewState, ok}
@@ -144,7 +138,6 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                     {State, ok}
             end;
         false ->
-            %% ct:pal("verify_point failed. Sender: ~p, Id: ~p", [Sender, Id]),
             {State, ok}
     end;
 handle_msg(State, _Sender, Msg) ->

@@ -24,27 +24,29 @@ end_per_testcase(_, Config) ->
 
 verify_poly_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
+    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Pairing), <<"honeybadger">>),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
-    BiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
-    CommitmentMatrix = dkg_commitmentmatrix:new(Pairing, BiPoly),
+    BiPoly = dkg_bipolynomial:generate(Generator, 4, Secret),
+    CommitmentMatrix = dkg_commitmentmatrix:new(Generator, BiPoly),
     TaggedPolys = [ {I, dkg_bipolynomial:apply(BiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), I))} || I <- lists:seq(1, 4) ],
     ?assert(lists:all(fun({I, Poly}) ->
-                              dkg_commitmentmatrix:verify_poly(CommitmentMatrix, I, Poly)
+                              dkg_commitmentmatrix:verify_poly(Generator, CommitmentMatrix, I, Poly)
                       end, TaggedPolys)).
 
 verify_point_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
+    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Pairing), <<"honeybadger">>),
     RandomBiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
-    CommitmentMatrix = dkg_commitmentmatrix:new(Pairing, RandomBiPoly),
+    CommitmentMatrix = dkg_commitmentmatrix:new(Generator, RandomBiPoly),
     TaggedPolys = [ {J, dkg_bipolynomial:apply(RandomBiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), J))} || J <- lists:seq(1, 4) ],
     Res = lists:map(fun({SenderId, Poly}) ->
-                            case dkg_commitmentmatrix:verify_poly(CommitmentMatrix, SenderId, Poly) of
+                            case dkg_commitmentmatrix:verify_poly(Generator, CommitmentMatrix, SenderId, Poly) of
                                 true ->
                                     %% verify_poly succeeded, check verify_point for verifiers
                                     lists:map(fun({VerifierId, Poly2}) ->
                                                       Point = dkg_polynomial:apply(Poly2, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), SenderId)),
-                                                      dkg_commitmentmatrix:verify_point(CommitmentMatrix, SenderId, VerifierId, Point)
+                                                      dkg_commitmentmatrix:verify_point(Generator, CommitmentMatrix, SenderId, VerifierId, Point)
                                               end, TaggedPolys);
                                 false ->
                                     false
@@ -57,10 +59,11 @@ verify_point_test(Config) ->
 public_key_share_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
+    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Pairing), <<"honeybadger">>),
     ct:pal("Secret: ~p~n", [erlang_pbc:element_to_string(Secret)]),
     RandomBiPoly = dkg_bipolynomial:generate(Pairing, 5, Secret),
     ct:pal("RandomBiPoly: ~p~n", [dkg_bipolynomial:print(RandomBiPoly)]),
-    CommitmentMatrix = dkg_commitmentmatrix:new(Pairing, RandomBiPoly),
+    CommitmentMatrix = dkg_commitmentmatrix:new(Generator, RandomBiPoly),
     ct:pal("CommitmentMatrix: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix)]),
     PublicKeySharePolynomial = [ dkg_commitmentmatrix:public_key_share(CommitmentMatrix, NodeId) || NodeId <- lists:seq(1, 6)],
     ct:pal("PublicKeyShares: ~p~n", [dkg_polynomial:print(PublicKeySharePolynomial)]),
@@ -77,17 +80,18 @@ public_key_share_test(Config) ->
 
 matrix_comparison_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
+    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Pairing), <<"honeybadger">>),
     Secret1 = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     ct:pal("Secret1: ~p~n", [erlang_pbc:element_to_string(Secret1)]),
     RandomBiPoly1 = dkg_bipolynomial:generate(Pairing, 5, Secret1),
     ct:pal("RandomBiPoly1: ~p~n", [dkg_bipolynomial:print(RandomBiPoly1)]),
-    CommitmentMatrix1 = dkg_commitmentmatrix:new(Pairing, RandomBiPoly1),
+    CommitmentMatrix1 = dkg_commitmentmatrix:new(Generator, RandomBiPoly1),
     ct:pal("CommitmentMatrix1: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix1)]),
     Secret2 = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     ct:pal("Secret2: ~p~n", [erlang_pbc:element_to_string(Secret2)]),
     RandomBiPoly2 = dkg_bipolynomial:generate(Pairing, 5, Secret2),
     ct:pal("RandomBiPoly2: ~p~n", [dkg_bipolynomial:print(RandomBiPoly2)]),
-    CommitmentMatrix2 = dkg_commitmentmatrix:new(Pairing, RandomBiPoly2),
+    CommitmentMatrix2 = dkg_commitmentmatrix:new(Generator, RandomBiPoly2),
     ct:pal("CommitmentMatrix2: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix2)]),
     ?assertEqual(false, dkg_commitmentmatrix:cmp(CommitmentMatrix1, CommitmentMatrix2)),
     ok.

@@ -2,21 +2,21 @@
 
 -record(commitment, {
           matrix :: dkg_commitmentmatrix:matrix(),
+          generator :: erlang_pbc:element(),
           echoes= #{} :: map(),
           readies=#{} :: map()
          }).
 
 -export_type([commitment/0]).
 
--export([new/1, new/3, cmp/2, mul/2, verify_poly/3, public_key_share/2, verify_point/4, interpolate/3, add_echo/3, add_ready/3, num_echoes/1, num_readies/1]).
+-export([new/3, cmp/2, mul/2, verify_poly/3, public_key_share/2, verify_point/4, interpolate/3, add_echo/3, add_ready/3, num_echoes/1, num_readies/1]).
 
 -type commitment() :: #commitment{}.
 
-new(_NodeIDs) ->
-    #commitment{matrix=dkg_commitmentmatrix:new()}.
-
-new(_NodeIDs, Pairing, BiPoly) ->
-    #commitment{matrix=dkg_commitmentmatrix:new(Pairing, BiPoly)}.
+new(_NodeIDs, Generator, Degree) when is_integer(Degree) ->
+    #commitment{matrix=dkg_commitmentmatrix:new(Generator, Degree), generator=Generator};
+new(_NodeIDs, Generator, BiPoly) ->
+    #commitment{matrix=dkg_commitmentmatrix:new(Generator, BiPoly), generator=Generator}.
 
 cmp(CommitmentA, CommitmentB) ->
     dkg_commitmentmatrix:cmp(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
@@ -25,13 +25,13 @@ mul(CommitmentA, CommitmentB) ->
     dkg_commitmentmatrix:mul(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
 
 verify_poly(Commitment, VerifierID, Poly) ->
-    dkg_commitmentmatrix:verify_poly(Commitment#commitment.matrix, VerifierID, Poly).
+    dkg_commitmentmatrix:verify_poly(Commitment#commitment.generator, Commitment#commitment.matrix, VerifierID, Poly).
 
 public_key_share(Commitment, NodeID) ->
     dkg_commitmentmatrix:public_key_share(Commitment#commitment.matrix, NodeID).
 
 verify_point(Commitment, SenderID, VerifierID, Point) ->
-    dkg_commitmentmatrix:verify_point(Commitment#commitment.matrix, SenderID, VerifierID, Point).
+    dkg_commitmentmatrix:verify_point(Commitment#commitment.generator, Commitment#commitment.matrix, SenderID, VerifierID, Point).
 
 interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
     Map = case EchoOrReady of

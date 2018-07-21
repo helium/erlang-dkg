@@ -1,20 +1,16 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, lookup/2, cmp/2, mul/2, verify_poly/3, verify_point/4, public_key_share/2]).
+-export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/2]).
 
-new(Pairing, T) when is_integer(T) ->
-    %% XXX: what does this function do or mean?
-    %% looks like its generating a bipolynomial instead of a matrix?
-    One = erlang_pbc:element_set(1, erlang_pbc:element_new('G1', Pairing)),
-    lists:foldl(fun(_, Acc) ->
-                        erlang:append_element(list_to_tuple(lists:duplicate(T+1, One)), Acc)
-                end, {}, lists:seq(0, T));
-new(Pairing, BiPoly) when is_tuple(BiPoly) ->
+new(Generator, T) when is_integer(T) ->
+    %% generate an empty commitment matrix of degree T
+    One = erlang_pbc:element_set(erlang_pbc:element_new('G1', Generator), 1),
+    list_to_tuple(lists:foldl(fun(_, Acc) ->
+                                      [list_to_tuple(lists:duplicate(T+1, One))| Acc]
+                              end, [], lists:seq(0, T)));
+new(Generator, BiPoly) when is_tuple(BiPoly) ->
     T = dkg_bipolynomial:degree(BiPoly),
-    G1 = erlang_pbc:element_new('G1', Pairing),
-    %% TODO obviously use something appropriate here
-    U = erlang_pbc:element_from_hash(G1, <<"lol">>),
-    list_to_tuple([ list_to_tuple([ erlang_pbc:element_pow(U, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ])  || I <- lists:seq(0, T) ]).
+    list_to_tuple([ list_to_tuple([ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ])  || I <- lists:seq(0, T) ]).
 
 lookup([Row, Col], Poly) ->
     element(Col, element(Row, Poly)).
@@ -39,12 +35,9 @@ mul(MatrixA, MatrixB) ->
                         insert([Row, Col], Acc, erlang_pbc:element_mul(lookup([Row, Col], MatrixA), lookup([Row, Col], MatrixB)))
                 end, MatrixA, [ {R, C} || R <- lists:seq(1, tuple_size(MatrixA)), C <- lists:seq(1, tuple_size(MatrixA))]).
 
-verify_poly(Matrix, VerifierID, Poly) ->
+verify_poly(U, Matrix, VerifierID, Poly) ->
     %% TODO obviously use something appropriate here
-    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', hd(Poly)), 1),
-    U = erlang_pbc:element_from_hash(G1, <<"lol">>),
     I = erlang_pbc:element_set(hd(Poly), VerifierID),
-
 
     lists:foldl(fun(_L, false) ->
                         false;
@@ -56,12 +49,10 @@ verify_poly(Matrix, VerifierID, Poly) ->
                         erlang_pbc:element_cmp(E1, E2)
                 end, true, lists:seq(1, length(Poly))).
 
-verify_point(Matrix, SenderID, VerifierID, Point) ->
+verify_point(U, Matrix, SenderID, VerifierID, Point) ->
     M = erlang_pbc:element_set(Point, SenderID),
     I = erlang_pbc:element_set(Point, VerifierID),
     G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', Point), 1),
-    %% TODO obviously use something appropriate here
-    U = erlang_pbc:element_from_hash(G1, <<"lol">>),
 
     Ga = erlang_pbc:element_pow(U, Point),
     Res = lists:foldl(fun(II, Acc) ->
