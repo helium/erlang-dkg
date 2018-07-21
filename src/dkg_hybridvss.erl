@@ -1,82 +1,73 @@
 -module(dkg_hybridvss).
 
--export([init/5,
-         init/6,
-         secret/1
-        ]).
+-export([init/6]).
+
+-export([input/2]).
 
 -export([handle_msg/3]).
 
+
+-type session() :: {Dealer :: pos_integer(), Round :: pos_integer()}.
+
 -record(state, {
-            id :: non_neg_integer(),
-            n :: non_neg_integer(),
-            f :: non_neg_integer(),
-            t :: non_neg_integer(),
+            id :: pos_integer(),
+            n :: pos_integer(),
+            f :: pos_integer(),
+            t :: pos_integer(),
             u :: erlang_pbc:element(),
-            e :: erlang_pbc:element(),
-            ph :: non_neg_integer(),
-            is_dealer = false :: boolean(),
-            recv_send = false :: boolean(),
+            session :: session(),
             echoes = #{} :: map(),
             readies = #{} :: map(),
-            commitments = #{} :: #{non_neg_integer() => dkg_commitment:commitment()},
-            secret :: erlang_pbc:element()
+            commitment :: undefined | dkg_commitment:commitment()
          }).
 
-init(Id, N, F, T, Ph) ->
-    init(Id, N, F, T, Ph, 'SS512').
-
-init(Id, N, F, T, Ph, Curve) ->
-    Group = erlang_pbc:group_new(Curve),
-    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> #state{}.
+init(Id, N, F, T, Generator, Session) ->
     #state{id=Id,
            n=N,
            f=F,
            t=T,
-           ph=Ph,
-           u=Generator,
-           e=Group}.
+           session=Session,
+           u=Generator}.
 
-
+%% XXX this seems garbled relative to the paper
 %% upon a message (Pd, τ, in, share, s): /* only Pd */
 %% choose a symmetric bivariate polynomial φ(x, y) = Pt
 %%  j,`=0 φj` xj y` ∈R ZpC ← {Cj` }tj,`=0 where Cj` = gφj` for j, ` ∈ [0, t]
 %% for all j ∈ [1, n] do
-%% aj (y) ← φ(j, y); send the message (Pd , τ, send, C, aj ) to Pj
-%% [x, y] and φ00 = s
-handle_msg(State=#state{e=E, t=T, n=N, ph=Ph, is_dealer=false}, _Sender, share) ->
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', E)),
-    ct:pal("Secret: ~p", [erlang_pbc:element_to_string(Secret)]),
-    BiPoly = dkg_bipolynomial:generate(E, T, Secret),
-    Commitment = dkg_commitment:new(allnodes(N), E, BiPoly),
+%%     aj (y) ← φ(j, y); send the message (Pd , τ, send, C, aj ) to Pj
+%%     [x, y] and φ00 = s
+input(State = #state{session=Session={Dealer,_}, id=Id, u=U, t=T, n=N}, Secret) when Dealer == Id ->
+    BiPoly = dkg_bipolynomial:generate(U, T, Secret),
+    Commitment = dkg_commitment:new(allnodes(N), U, BiPoly),
 
     Msgs = lists:map(fun(Node) ->
-                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', E), Node),
+                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
                              Aj = dkg_bipolynomial:apply(BiPoly, NodeZr),
-                             {unicast, Node, {send, {Ph, Commitment, Aj}}}
-                     end, allnodes(N)),
-    NewState = State#state{is_dealer=true, secret=Secret},
+                             {unicast, Node, {send, {Session, Commitment, Aj}}}
+                     end, [X || X <- allnodes(N), X /= Id]),
+    NewState = State#state{commitment=Commitment},
     {NewState, {send, Msgs}};
-handle_msg(State, _Sender, share) ->
-    {State, {error, already_dealer}};
+input(_State, _Secret) ->
+    {error, not_dealer}.
 
 %% upon a message (Pd, τ, send, C, a) from Pd (first time):
 %% if verify-poly(C, i, a) then
-%% for all j ∈ [1, n] do
-%% send the message (Pd , τ, echo, C, a(j)) to Pj
-handle_msg(State=#state{n=N, recv_send=false, commitments=Commitments}, Sender, {send, {Ph, Commitment, A}}) ->
+%%     for all j ∈ [1, n] do
+%%         send the message (Pd , τ, echo, C, a(j)) to Pj
+handle_msg(State=#state{n=N, commitment=undefined, session=Session}, Sender, {send, {Session = {Sender, _}, Commitment, A}}) ->
     case dkg_commitment:verify_poly(Commitment, State#state.id, A) of
         true ->
             Msgs = lists:map(fun(Node) ->
-                                     {unicast, Node, {echo, {Sender, Ph, Commitment, dkg_polynomial:apply(A, Node)}}}
+                                     {unicast, Node, {echo, {Session, Commitment, dkg_polynomial:apply(A, Node)}}}
                              end, allnodes(N)),
-            NewState = State#state{recv_send=true, commitments=maps:put(Sender, Commitment, Commitments)},
+            NewState = State#state{commitment=Commitment},
             {NewState, {send, Msgs}};
         false ->
-            {State, {error, failed_dkg_bipolynomial_verify_poly}}
+            {error, bad_commitment}
     end;
-handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
-    {State, {error, alread_received_send}};
+handle_msg(State, _Sender, {send, {_Session, _Commitment, _A}}) ->
+    {State, {error, already_received_commitment}};
 
 %% upon a message (Pd, τ, echo, C, α) from Pm (first time):
 %% if verify-point(C, i, m, α) then
@@ -85,10 +76,9 @@ handle_msg(State, _Sender, {send, {_Ph, _Commitment, _A}}) ->
 %% Lagrange-interpolate a from AC
 %% for all j ∈ [1, n] do
 %% send the message (Pd, τ, ready, C, a(j)) to Pj
-handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}, Sender, {echo, {Dealer, Ph, Commitment0, A}}) ->
+handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, session=Session}, Sender, {echo, {Session, Commitment0, A}}) ->
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
-            Commitment = maps:get(Dealer, Commitments, Commitment0),
             case dkg_commitment:add_echo(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_echoes(NewCommitment) == ceil((N+T+1)/2) andalso
@@ -96,12 +86,12 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
                         true ->
                             Subshares = dkg_commitment:interpolate(NewCommitment, echo, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Dealer, Ph, NewCommitment, lists:nth(Node+1, Subshares)}}}
+                                                     {unicast, Node, {ready, {Session, NewCommitment, lists:nth(Node+1, Subshares)}}}
                                              end, allnodes(N)),
-                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitments=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
                         false ->
-                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitments=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment=NewCommitment},
                             {NewState, ok}
                     end;
                 {false, _OldCommitment} ->
@@ -122,12 +112,11 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitments=Commitments}
 %% send the message (Pd, τ, ready, C, a(j)) to Pj
 %% else if rC = n − t − f then
 %% si ← a(0); output (Pd , τ, out, shared, C, si )
-handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commitments}, Sender, {ready, {Dealer, Ph, Commitment0, A}}) ->
+handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, Commitment0, A}}) ->
     %% ct:pal("Got ready, Sender: ~p, Id: ~p", [Sender, Id]),
 
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
-            Commitment = maps:get(Dealer, Commitments, Commitment0),
             %% ct:pal("verify_point success. Sender: ~p, Id: ~p", [Sender, Id]),
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
@@ -136,18 +125,18 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitments=Commi
                         true ->
                             SubShares = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Dealer, Ph, NewCommitment, lists:nth(Node+1, SubShares)}}}
+                                                     {unicast, Node, {ready, {Session, NewCommitment, lists:nth(Node+1, SubShares)}}}
                                              end, allnodes(N)),
-                            NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
+                            NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
-                                    {NewState, {result, {Dealer, Ph, NewCommitment, SubShare}}};
+                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
+                                    {NewState, {result, {Session, NewCommitment, SubShare}}};
                                 false ->
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitments=maps:put(Dealer, NewCommitment, Commitments)},
+                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                                     {NewState, ok}
                             end
                     end;
@@ -163,7 +152,3 @@ handle_msg(State, _Sender, Msg) ->
 
 allnodes(N) ->
     lists:seq(1, N).
-
-%% XXX: THIS IS JUST FOR SANITY CHECK, REMOVE THIS
-secret(State) ->
-    State#state.secret.

@@ -28,19 +28,22 @@ init_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    Ph = proplists:get_value(ph, Config),
     Module = proplists:get_value(module, Config),
+    Group = erlang_pbc:group_new('SS512'),
+    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, Ph) || Id <- lists:seq(1, N-1) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, Generator, {1, 0}) || Id <- lists:seq(1, N-1) ],
 
-    {NewDealerState, {send, MsgsToSend}} = Module:handle_msg(Dealer, 1, share),
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+
+    {NewDealerState, {send, MsgsToSend}} = Module:input(Dealer, Secret),
 
     States = [NewDealerState | Rest],
     StatesWithId = lists:zip(lists:seq(1, length(States)), States),
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
 
     %% check that the shares from nodes can be interpolated to calculate the original secret back
-    NodesAndShares = lists:foldl(fun({result, {Node, {_Pd, _Phase, _Commitment, Share}}}, Acc) ->
+    NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share}}}, Acc) ->
                                         maps:put(Node, Share, Acc)
                                 end, #{}, sets:to_list(ConvergedResults)),
 
@@ -60,7 +63,6 @@ init_test(Config) ->
                                  end
                          end, [], [0 | lists:seq(1,9)]), %% note that we also evaluate at 0
 
-    OriginalSecret = erlang_pbc:element_to_string(dkg_hybridvss:secret(NewDealerState)),
-    CalculatedSecret = erlang_pbc:element_to_string(hd(lists:reverse(Shares))),
-    ?assertEqual(CalculatedSecret, OriginalSecret),
+    CalculatedSecret = hd(lists:reverse(Shares)),
+    ?assert(erlang_pbc:element_cmp(CalculatedSecret, Secret)),
     ok.
