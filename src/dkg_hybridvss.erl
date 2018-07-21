@@ -16,6 +16,7 @@
             t :: pos_integer(),
             u :: erlang_pbc:element(),
             session :: session(),
+            sent_echo = false :: boolean(),
             echoes = #{} :: map(),
             readies = #{} :: map(),
             commitment :: undefined | dkg_commitment:commitment()
@@ -44,7 +45,7 @@ input(State = #state{session=Session={Dealer,_}, id=Id, u=U, t=T, n=N}, Secret) 
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
                              Aj = dkg_bipolynomial:apply(BiPoly, NodeZr),
                              {unicast, Node, {send, {Session, Commitment, Aj}}}
-                     end, [X || X <- allnodes(N), X /= Id]),
+                     end, allnodes(N)),
     NewState = State#state{commitment=Commitment},
     {NewState, {send, Msgs}};
 input(_State, _Secret) ->
@@ -54,17 +55,18 @@ input(_State, _Secret) ->
 %%     if verify-poly(C, i, a) then
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
-handle_msg(State=#state{n=N, session=Session}, Sender, {send, {Session = {Sender, _}, Commitment0, A}}) ->
+handle_msg(State=#state{n=N, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, Commitment0, A}}) ->
     case dkg_commitment:verify_poly(Commitment0, State#state.id, A) of
         true ->
             Msgs = lists:map(fun(Node) ->
                                      {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:apply(A, Node)}}}
                              end, allnodes(N)),
-            {State, {send, Msgs}};
+            {State#state{sent_echo=true}, {send, Msgs}};
         false ->
             {error, bad_commitment}
     end;
 handle_msg(State, _Sender, {send, {_Session, _Commitment, _A}}) ->
+    %% already received a commitment, or it's not from the dealer; ignore this one
     {State, {error, already_received_commitment}};
 
 %% upon a message (Pd, τ, echo, C, α) from Pm (first time):
