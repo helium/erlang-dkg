@@ -96,9 +96,7 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                     %% TODO presumably we need to check this when we get a VSS result as well?
                                     %% do some magic shit to create the key shard
 
-                                    %% XXX
-                                    %% ====================================================
-                                    %% multiply the commitment matrices for each commitment
+                                    %% XXX: multiply the commitment matrices for each commitment
                                     %% and ignore the readies and echoes inside the commitment?
                                     %% is that what we're supposed to do?
                                     %% we also have dkg_commitment:mul, but it does the same thing as this
@@ -109,20 +107,15 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                                                        dkg_commitmentmatrix:mul(Matrix, Acc)
                                                                        %% this matrix multiplication is commutative?
                                                                end, hd(Matrices), Matrices), %% this is probably C in the output message
-                                    ct:pal("OutputMatrix: ~p", [OutputMatrix]),
-                                    %% ====================================================
 
-                                    %% XXX
-                                    %% ====================================================
-                                    %% add the shares up and output that
+                                    %% XXX: add the shares up and output that
                                     Shares = find_shares(State#state.vss_done_this_round),
                                     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', State#state.u), 0),
                                     Shard = lists:foldl(fun(Share, Acc) ->
                                                                 erlang_pbc:element_add(Share, Acc)
                                                         end, Zero, Shares),
 
-                                    ct:pal("Id: ~p, Shard: ~p", [State#state.id, Shard]),
-                                    %% ====================================================
+                                    ct:pal("Id: ~p, Shard: ~p, OutputMatrix: ~p", [State#state.id, Shard, OutputMatrix]),
 
                                     {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputMatrix, Shard}}};
                                 false ->
