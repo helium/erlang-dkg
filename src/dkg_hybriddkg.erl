@@ -50,7 +50,9 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Se
                     case State#state.id == Leader of
                         true ->
                             %% this is not multicast in the protocol, but we have multicast support, sooooooo....
-                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, {send, [{multicast, {send, Session, maps:keys(VSSDoneThisRound)}}]}};
+                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map),
+                                         vss_done_this_round=VSSDoneThisRound},
+                             {send, [{multicast, {send, Session, maps:keys(VSSDoneThisRound)}}]}};
                         false ->
                             {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
                     end;
@@ -80,7 +82,7 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
         true ->
             {State, ok}
     end;
-handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
+handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}) ->
     case lists:member(Sender, State#state.readies_this_round) of
         false ->
             ReadiesThisRound = [Sender | State#state.readies_this_round],
@@ -97,27 +99,23 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                     %% do some magic shit to create the key shard
 
                                     %% XXX: multiply the commitment matrices for each commitment
-                                    %% and ignore the readies and echoes inside the commitment?
-                                    %% is that what we're supposed to do?
-                                    %% we also have dkg_commitment:mul, but it does the same thing as this
-                                    %% don't know what happens to the readies and echos, perhaps those
-                                    %% don't matter once this point is reached
+                                    %% and ignore the readies and echoes inside the commitment
                                     Matrices = [ C || {_VSSId, {C, _}} <- lists:keysort(1, maps:to_list(State#state.vss_done_this_round))],
-                                    OutputMatrix = lists:foldl(fun(Matrix, Acc) ->
+                                    OutputCommitment = lists:foldl(fun(Matrix, Acc) ->
                                                                        dkg_commitment:mul(Matrix, Acc)
-                                                                       %% this matrix multiplication is commutative?
-                                                               end, dkg_commitment:new(lists:seq(1, N), State#state.u, T), Matrices), %% this is probably C in the output message
+                                                               end, dkg_commitment:new(lists:seq(1, N), U, T), Matrices),
+
+                                    %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
+                                    PublicKeySharePoly = [dkg_commitment:public_key_share(OutputCommitment, NodeId) || NodeId <- lists:seq(1, N)],
 
                                     %% XXX: add the shares up and output that
                                     Shares = find_shares(State#state.vss_done_this_round),
-                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', State#state.u), 0),
+                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
                                     Shard = lists:foldl(fun(Share, Acc) ->
                                                                 erlang_pbc:element_add(Share, Acc)
                                                         end, Zero, Shares),
 
-                                    ct:pal("Id: ~p, Shard: ~p, OutputMatrix: ~p", [State#state.id, erlang_pbc:element_to_string(Shard), dkg_bipolynomial:print(dkg_commitment:matrix(OutputMatrix))]),
-
-                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputMatrix, Shard}}};
+                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputCommitment, Shard, PublicKeySharePoly}}};
                                 false ->
                                     {State#state{readies_this_round=ReadiesThisRound}, ok}
                             end;
