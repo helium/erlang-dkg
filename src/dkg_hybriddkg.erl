@@ -36,13 +36,13 @@ init(Id, N, T, F, Generator, Round) ->
                       end, {#{}, []}, lists:seq(1, N)),
     {#state{id=Id, n=N, f=F, t=T, u=Generator, session=Session, vss_map=VSSes}, {send, Msgs}}.
 
-handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, Sender, VssMSG}) ->
+handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VssID, State#state.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
-            {State#state{vss_map=maps:put(NewVSS, VssID, State#state.vss_map)}, ok};
+            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
-            {State#state{vss_map=maps:put(NewVSS, VssID, State#state.vss_map)}, wrap({vss, VssID, Session}, ToSend)};
-        {NewVSS, {result, Session, _Commitment, Si}} ->
+            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, {send, wrap({vss, VssID, Session}, ToSend)}};
+        {NewVSS, {result, {_Session, _Commitment, Si}}} ->
             %% TODO 'extended' VSS should output signed ready messages
             VSSDoneThisRound = maps:put(VssID, Si, State#state.vss_done_this_round),
             case maps:size(VSSDoneThisRound) == State#state.t + 1 andalso maps:size(State#state.vss_done_last_round) == 0 of
@@ -50,12 +50,12 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Se
                     case State#state.id == Leader of
                         true ->
                             %% this is not multicast in the protocol, but we have multicast support, sooooooo....
-                            {State#state{vss_map=maps:put(NewVSS, VssID, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, {send, [{multicast, {send, Session, maps:keys(VSSDoneThisRound)}}]}};
+                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, {send, [{multicast, {send, Session, maps:keys(VSSDoneThisRound)}}]}};
                         false ->
-                            {State#state{vss_map=maps:put(NewVSS, VssID, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
+                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
                     end;
                 false ->
-                    {State#state{vss_map=maps:put(NewVSS, VssID, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
+                    {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
             end
     end;
 handle_msg(State = #state{session=Session={Leader, _}}, Sender, {send, Session, VSSDone}) when Sender == Leader ->

@@ -30,7 +30,9 @@ do_send(Mod, {Id, {send, [{multicast, Msg}|T]}}, Acc, States) ->
                             {{J, NewState}, {J, Result}}
                     end, States),
     {NewStates, Results} = lists:unzip(Res),
-    do_send(Mod, {Id, {send, T}}, Results ++ Acc, lists:ukeymerge(1, NewStates, States)).
+    do_send(Mod, {Id, {send, T}}, Results ++ Acc, lists:ukeymerge(1, NewStates, States));
+do_send(_, Bleh, _, _) ->
+    erlang:error(Bleh).
 
 random_n(N, List) ->
     lists:sublist(shuffle(List), N).

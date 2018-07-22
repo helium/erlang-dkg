@@ -32,7 +32,7 @@ init_test(Config) ->
     Group = erlang_pbc:group_new('SS512'),
     Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, Generator, {1, 0}) || Id <- lists:seq(1, N-1) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, Generator, {1, 0}) || Id <- lists:seq(1, N) ],
 
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
 
@@ -61,7 +61,7 @@ init_test(Config) ->
                                          %% Node ${Index} has sent us a share
                                          [ maps:get(Index, NodesAndShares) | Acc]
                                  end
-                         end, [], [0 | lists:seq(1,9)]), %% note that we also evaluate at 0
+                         end, [], [0 | lists:seq(1,N)]), %% note that we also evaluate at 0
 
     CalculatedSecret = hd(lists:reverse(Shares)),
     ?assert(erlang_pbc:element_cmp(CalculatedSecret, Secret)),
