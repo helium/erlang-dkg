@@ -58,12 +58,13 @@ init_test(Config) ->
 
     PrivateKeys = lists:map(fun({result, {Node, {SK, VK, VKs}}}) ->
                                     PK = tpke_pubkey:init(N, F, Generator, Generator, VK, VKs, 'SS512'),
-                                    tpke_privkey:init(PK, SK, Node)
+                                    tpke_privkey:init(PK, SK, Node-1)
                             end, sets:to_list(ConvergedResults)),
     PubKey = tpke_privkey:public_key(hd(PrivateKeys)),
     Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
     MessageToSign = tpke_pubkey:hash_message(PubKey, Msg),
     Signatures = [ tpke_privkey:sign(PrivKey, MessageToSign) || PrivKey <- PrivateKeys],
+    ct:pal("~p", [[tpke_pubkey:verify_signature_share(PubKey, Share, MessageToSign) || Share <- Signatures]]),
     ?assert(lists:all(fun(X) -> X end, [tpke_pubkey:verify_signature_share(PubKey, Share, MessageToSign) || Share <- Signatures])),
     {ok, Sig} = tpke_pubkey:combine_signature_shares(PubKey, dealer:random_n(T, Signatures), MessageToSign),
     ?assert(tpke_pubkey:verify_signature(PubKey, Sig, MessageToSign)),

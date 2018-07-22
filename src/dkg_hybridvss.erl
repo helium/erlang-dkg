@@ -32,7 +32,7 @@ init(Id, N, F, T, Generator, Session) ->
            n=N,
            f=F,
            t=T,
-           commitment = dkg_commitment:new(allnodes(N), Generator, T),
+           %commitment = dkg_commitment:new(allnodes(N), Generator, T),
            session=Session,
            u=Generator}.
 
@@ -62,10 +62,14 @@ input(_State, _Secret) ->
 handle_msg(State=#state{n=N, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, Commitment0, A}}) ->
     case dkg_commitment:verify_poly(Commitment0, State#state.id, A) of
         true ->
+            Commitment = case State#state.commitment of
+                             undefined -> Commitment0;
+                             C -> C
+                         end,
             Msgs = lists:map(fun(Node) ->
                                      {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:apply(A, Node)}}}
                              end, allnodes(N)),
-            {State#state{sent_echo=true}, {send, Msgs}};
+            {State#state{sent_echo=true, commitment=Commitment}, {send, Msgs}};
         false ->
             {error, bad_commitment}
     end;
@@ -80,9 +84,13 @@ handle_msg(State, _Sender, {send, {_Session, _Commitment, _A}}) ->
 %%             Lagrange-interpolate a from AC
 %%             for all j ∈ [1, n] do
 %%                  send the message (Pd, τ, ready, C, a(j)) to Pj
-handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, session=Session}, Sender, {echo, {Session, Commitment0, A}}) ->
+handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, session=Session}, Sender, {echo, {Session, Commitment0, A}}) ->
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
+            Commitment = case State#state.commitment of
+                             undefined -> Commitment0;
+                             C -> C
+                         end,
             case dkg_commitment:add_echo(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_echoes(NewCommitment) == ceil((N+T+1)/2) andalso
@@ -98,8 +106,8 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, s
                             NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment=NewCommitment},
                             {NewState, ok}
                     end;
-                {false, _OldCommitment} ->
-                    {State, ok}
+                {false, OldCommitment} ->
+                    {State#state{commitment=OldCommitment}, ok}
             end;
         false ->
             {State, ok}
@@ -118,6 +126,10 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, commitment=Commitment, s
 handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, Commitment0, A}}) ->
     case dkg_commitment:verify_point(Commitment0, Sender, Id, A) of
         true ->
+            Commitment = case State#state.commitment of
+                             undefined -> Commitment0;
+                             C -> C
+                         end,
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
@@ -134,14 +146,14 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
-                                    {NewState, {result, {Session, Commitment0, SubShare}}};
+                                    {NewState, {result, {Session, Commitment, SubShare}}};
                                 false ->
                                     NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                                     {NewState, ok}
                             end
                     end;
-                {false, _OldCommitment} ->
-                    {State, ok}
+                {false, OldCommitment} ->
+                    {State#state{commitment=OldCommitment}, ok}
             end;
         false ->
             {State, ok}

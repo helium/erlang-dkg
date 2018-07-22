@@ -47,6 +47,30 @@ init_test(Config) ->
                                         maps:put(Node, Share, Acc)
                                 end, #{}, sets:to_list(ConvergedResults)),
 
+    AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share}}} <- sets:to_list(ConvergedResults)],
+    OutputCommitment = hd(AllCommitments),
+
+    %[VerificationKey | PublicKeyShares] = dkg_commitment:interpolate(OutputCommitment, ready, lists:seq(1, N)),
+    VerificationKey = dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)),
+    true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
+    PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
+
+    PublicKey = tpke_pubkey:init(N, F, Generator, Generator, VerificationKey, PublicKeyShares, 'SS512'),
+    PrivateKeys = [ tpke_privkey:init(PublicKey, Share, NodeID-1) || {NodeID, Share} <- maps:to_list(NodesAndShares)],
+    Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
+    MessageToSign = tpke_pubkey:hash_message(PublicKey, Msg),
+    SignatureShares = [tpke_privkey:sign(PrivateKey, MessageToSign) || PrivateKey <- PrivateKeys],
+    ?assert(lists:all(fun(E) -> E end, [tpke_pubkey:verify_signature_share(PublicKey, SignatureShare, MessageToSign) || SignatureShare <- SignatureShares])),
+
+    Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),
+    CipherText = tpke_pubkey:encrypt(PublicKey, Message),
+    ?assert(tpke_pubkey:verify_ciphertext(PublicKey, CipherText)),
+    DecShares = [tpke_privkey:decrypt_share(PrivateKey, CipherText) || PrivateKey <- PrivateKeys],
+    ?assert(lists:all(fun(E) -> E end, [tpke_pubkey:verify_share(PublicKey, DecShare, CipherText) || DecShare <- DecShares])),
+    ?assertEqual(Message, tpke_pubkey:combine_shares(PublicKey, CipherText, dealer:random_n(T+1, DecShares))),
+
+    true = lists:all(fun(C) -> dkg_commitment:cmp(hd(AllCommitments), C) end, tl(AllCommitments)),
+
     {Indices0, Elements} = lists:unzip(maps:to_list(NodesAndShares)),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
     Shares = lists:foldl(fun(Index, Acc) ->
