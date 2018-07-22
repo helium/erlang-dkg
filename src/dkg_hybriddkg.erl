@@ -21,10 +21,10 @@
           session :: session()
          }).
 
-init(Id, N, T, F, Generator, Round) ->
+init(Id, N, F, T, Generator, Round) ->
     Session = {1, Round},
     {VSSes, Msgs} = lists:foldl(fun(E, {Map, ToSendAcc}) ->
-                              VSS = dkg_hybridvss:init(Id, N, T, F, Generator, {E, Round}),
+                              VSS = dkg_hybridvss:init(Id, N, F, T, Generator, {E, Round}),
                               case E == Id of
                                   true ->
                                       Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
