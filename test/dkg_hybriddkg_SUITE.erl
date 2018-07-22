@@ -41,13 +41,33 @@ init_test(Config) ->
     ct:pal("Results ~p", [sets:to_list(ConvergedResults)]),
 
     %% XXX: this is the same as the pubkeyshare test, I'm sure there is more to it
-    PublicKeyShares = lists:keysort(1, [ {Node, PubKeyShare} || {result, {Node, {_Commitment, _Share, PubKeyShare}}} <- sets:to_list(ConvergedResults)]),
-    PublicKeySharePoly = [Share || {_, Share} <- PublicKeyShares],
+    SecretKeyShares = lists:keysort(1, [ {Node, SecretKey} || {result, {Node, {SecretKey, _VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
+    VerificationKeys = lists:keysort(1, [ {Node, VerificationKey} || {result, {Node, {_SecretKey, VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
+    VerificationKeyss = lists:keysort(1, [ {Node, VerificationKeyz} || {result, {Node, {_SecretKey, _VerificationKey, VerificationKeyz}}} <- sets:to_list(ConvergedResults)]),
+    ct:pal("Secret key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- SecretKeyShares]]),
+    ct:pal("Public key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- VerificationKeys]]),
+    ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
+    PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
     KnownSecret = dkg_polynomial:apply(PublicKeySharePoly, 0),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), I) || I <- lists:seq(1, N) ],
     Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), 0),
     CalculatedSecret = dkg_lagrange:interpolate(PublicKeySharePoly, Indices, Alpha),
     ?assert(erlang_pbc:element_cmp(KnownSecret, CalculatedSecret)),
+
+    %% attempt to construct some TPKE keys...
+
+    PrivateKeys = lists:map(fun({result, {Node, {SK, VK, VKs}}}) ->
+                                    PK = tpke_pubkey:init(N, F, Generator, Generator, VK, VKs, 'SS512'),
+                                    tpke_privkey:init(PK, SK, Node)
+                            end, sets:to_list(ConvergedResults)),
+    PubKey = tpke_privkey:public_key(hd(PrivateKeys)),
+    Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),
+    CipherText = tpke_pubkey:encrypt(PubKey, Message),
+    ?assert(tpke_pubkey:verify_ciphertext(PubKey, CipherText)),
+    Shares = [ tpke_privkey:decrypt_share(SK, CipherText) || SK <- PrivateKeys ],
+    ct:pal("Decrypted shares ~p", [Shares]),
+    ?assert(lists:all(fun(X) -> X end, [tpke_pubkey:verify_share(PubKey, Share, CipherText) || Share <- Shares])),
+    ?assertEqual(Message, tpke_pubkey:combine_shares(PubKey, CipherText, dealer:random_n(T, Shares))),
 
     ?assertEqual(N, length(sets:to_list(ConvergedResults))),
     ok.

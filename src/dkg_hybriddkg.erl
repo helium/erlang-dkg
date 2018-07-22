@@ -82,7 +82,7 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
         true ->
             {State, ok}
     end;
-handle_msg(State = #state{n=N, t=T, u=U, f=F, id=Id}, Sender, {ready, Session, VSSDone}) ->
+handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}) ->
     case lists:member(Sender, State#state.readies_this_round) of
         false ->
             ReadiesThisRound = [Sender | State#state.readies_this_round],
@@ -100,22 +100,24 @@ handle_msg(State = #state{n=N, t=T, u=U, f=F, id=Id}, Sender, {ready, Session, V
 
                                     %% XXX: multiply the commitment matrices for each commitment
                                     %% and ignore the readies and echoes inside the commitment
-                                    Matrices = [ C || {_VSSId, {C, _}} <- lists:keysort(1, maps:to_list(State#state.vss_done_this_round))],
-                                    OutputCommitment = lists:foldl(fun(Matrix, Acc) ->
-                                                                       dkg_commitment:mul(Matrix, Acc)
-                                                               end, dkg_commitment:new(lists:seq(1, N), U, T), Matrices),
+                                    OutputCommitment = lists:foldl(fun(VSSId, Acc) ->
+                                                                           {Matrix, _} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                                           dkg_commitment:mul(Acc, Matrix)
+                                                                   end, dkg_commitment:new(lists:seq(1, N), U, T), VSSDone),
 
                                     %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
-                                    PublicKeyShare = dkg_commitment:public_key_share(OutputCommitment, Id),
+                                    VerificationKey = dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)),
+                                    true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
+                                    PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
 
                                     %% XXX: add the shares up and output that
-                                    Shares = find_shares(State#state.vss_done_this_round),
                                     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
-                                    Shard = lists:foldl(fun(Share, Acc) ->
-                                                                erlang_pbc:element_add(Share, Acc)
-                                                        end, Zero, Shares),
+                                    Shard = lists:foldl(fun(VSSId, Acc) ->
+                                                                {_, Share} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                                erlang_pbc:element_add(Acc, Share)
+                                                        end, Zero, VSSDone),
 
-                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputCommitment, Shard, PublicKeyShare}}};
+                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {Shard, VerificationKey, PublicKeyShares}}};
                                 false ->
                                     {State#state{readies_this_round=ReadiesThisRound}, ok}
                             end;
@@ -137,21 +139,3 @@ wrap(Id, [{multicast, Msg}|T]) ->
     [{multicast, {Id, Msg}}|wrap(Id, T)];
 wrap(Id, [{unicast, Dest, Msg}|T]) ->
     [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
-
-find_shares(NodesAndShares) ->
-    {Indices0, Elements} = lists:unzip([{N, Si} || {N, {_C, Si}} <- maps:to_list(NodesAndShares)]),
-    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
-    Shares = lists:foldl(fun(Index, Acc) ->
-                                 case maps:is_key(Index, NodesAndShares) of
-                                     false ->
-                                         %% Node ${Index} has not sent us a share, interpolate it
-                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
-                                         LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
-                                         InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
-                                         [ InterpolatedShare | Acc];
-                                     true ->
-                                         %% Node ${Index} has sent us a share
-                                         [ element(2, maps:get(Index, NodesAndShares)) | Acc]
-                                 end
-                         end, [], [0 | lists:seq(1, maps:size(NodesAndShares))]), %% note that we also evaluate at 0
-    lists:reverse(Shares).
