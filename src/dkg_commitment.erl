@@ -34,7 +34,8 @@ cmp(CommitmentA, CommitmentB) ->
     dkg_commitmentmatrix:cmp(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
 
 mul(CommitmentA, CommitmentB) ->
-    dkg_commitmentmatrix:mul(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
+    NewMatrix = dkg_commitmentmatrix:mul(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix),
+    CommitmentA#commitment{matrix=NewMatrix}.
 
 verify_poly(Commitment, VerifierID, Poly) ->
     dkg_commitmentmatrix:verify_poly(Commitment#commitment.generator, Commitment#commitment.matrix, VerifierID, Poly).

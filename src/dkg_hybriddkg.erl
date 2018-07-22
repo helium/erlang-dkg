@@ -15,7 +15,7 @@
           vss_map :: #{pos_integer() => dkg_hybridvss:vss()},
           echoes_this_round = [] :: [non_neg_integer()], %% eL,Q in the protocol, echoes seen this round
           readies_this_round = [] :: [non_neg_integer()], %% rL,Q in the protocol, readies seen this round
-          vss_done_this_round = #{} :: #{pos_integer() => erlang_pbc:element()}, %% Q hat in the protocol
+          vss_done_this_round = #{} :: #{pos_integer() => {dkg_commitment:commitment(), erlang_pbc:element()}}, %% Q hat in the protocol
           vss_done_last_round = #{} :: #{pos_integer() => erlang_pbc:element()}, %% Q bar in the protocol
           leader = 1 :: pos_integer(),
           session :: session()
@@ -42,9 +42,9 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Se
             {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
             {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, {send, wrap({vss, VssID, Session}, ToSend)}};
-        {NewVSS, {result, {_Session, _Commitment, Si}}} ->
+        {NewVSS, {result, {_Session, Commitment, Si}}} ->
             %% TODO 'extended' VSS should output signed ready messages
-            VSSDoneThisRound = maps:put(VssID, Si, State#state.vss_done_this_round),
+            VSSDoneThisRound = maps:put(VssID, {Commitment, Si}, State#state.vss_done_this_round),
             case maps:size(VSSDoneThisRound) == State#state.t + 1 andalso maps:size(State#state.vss_done_last_round) == 0 of
                 true ->
                     case State#state.id == Leader of
@@ -102,11 +102,11 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                     %% we also have dkg_commitment:mul, but it does the same thing as this
                                     %% don't know what happens to the readies and echos, perhaps those
                                     %% don't matter once this point is reached
-                                    Matrices = [ dkg_commitment:matrix(dkg_hybridvss:commitment(VSS)) || {_VSSId, VSS} <- maps:to_list(State#state.vss_map)],
+                                    Matrices = [ C || {_VSSId, {C, _}} <- lists:keysort(1, maps:to_list(State#state.vss_done_this_round))],
                                     OutputMatrix = lists:foldl(fun(Matrix, Acc) ->
-                                                                       dkg_commitmentmatrix:mul(Matrix, Acc)
+                                                                       dkg_commitment:mul(Matrix, Acc)
                                                                        %% this matrix multiplication is commutative?
-                                                               end, hd(Matrices), Matrices), %% this is probably C in the output message
+                                                               end, dkg_commitment:new(lists:seq(1, N), State#state.u, T), Matrices), %% this is probably C in the output message
 
                                     %% XXX: add the shares up and output that
                                     Shares = find_shares(State#state.vss_done_this_round),
@@ -115,7 +115,7 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                                                 erlang_pbc:element_add(Share, Acc)
                                                         end, Zero, Shares),
 
-                                    ct:pal("Id: ~p, Shard: ~p, OutputMatrix: ~p", [State#state.id, Shard, OutputMatrix]),
+                                    ct:pal("Id: ~p, Shard: ~p, OutputMatrix: ~p", [State#state.id, erlang_pbc:element_to_string(Shard), dkg_bipolynomial:print(dkg_commitment:matrix(OutputMatrix))]),
 
                                     {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputMatrix, Shard}}};
                                 false ->
@@ -141,7 +141,7 @@ wrap(Id, [{unicast, Dest, Msg}|T]) ->
     [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
 
 find_shares(NodesAndShares) ->
-    {Indices0, Elements} = lists:unzip(maps:to_list(NodesAndShares)),
+    {Indices0, Elements} = lists:unzip([{N, Si} || {N, {_C, Si}} <- maps:to_list(NodesAndShares)]),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
     Shares = lists:foldl(fun(Index, Acc) ->
                                  case maps:is_key(Index, NodesAndShares) of
@@ -153,7 +153,7 @@ find_shares(NodesAndShares) ->
                                          [ InterpolatedShare | Acc];
                                      true ->
                                          %% Node ${Index} has sent us a share
-                                         [ maps:get(Index, NodesAndShares) | Acc]
+                                         [ element(2, maps:get(Index, NodesAndShares)) | Acc]
                                  end
                          end, [], [0 | lists:seq(1, maps:size(NodesAndShares))]), %% note that we also evaluate at 0
     lists:reverse(Shares).
