@@ -82,7 +82,7 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
         true ->
             {State, ok}
     end;
-handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}) ->
+handle_msg(State = #state{n=N, t=T, u=U, f=F, id=Id}, Sender, {ready, Session, VSSDone}) ->
     case lists:member(Sender, State#state.readies_this_round) of
         false ->
             ReadiesThisRound = [Sender | State#state.readies_this_round],
@@ -106,7 +106,7 @@ handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}
                                                                end, dkg_commitment:new(lists:seq(1, N), U, T), Matrices),
 
                                     %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
-                                    PublicKeySharePoly = [dkg_commitment:public_key_share(OutputCommitment, NodeId) || NodeId <- lists:seq(1, N)],
+                                    PublicKeyShare = dkg_commitment:public_key_share(OutputCommitment, Id),
 
                                     %% XXX: add the shares up and output that
                                     Shares = find_shares(State#state.vss_done_this_round),
@@ -115,7 +115,7 @@ handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}
                                                                 erlang_pbc:element_add(Share, Acc)
                                                         end, Zero, Shares),
 
-                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputCommitment, Shard, PublicKeySharePoly}}};
+                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputCommitment, Shard, PublicKeyShare}}};
                                 false ->
                                     {State#state{readies_this_round=ReadiesThisRound}, ok}
                             end;
