@@ -9,7 +9,19 @@
 
 -export_type([commitment/0]).
 
--export([new/3, cmp/2, mul/2, verify_poly/3, public_key_share/2, verify_point/4, interpolate/3, add_echo/3, add_ready/3, num_echoes/1, num_readies/1]).
+-export([new/3,
+         cmp/2,
+         mul/2,
+         verify_poly/3,
+         public_key_share/2,
+         verify_point/4,
+         interpolate/3,
+         add_echo/3,
+         add_ready/3,
+         num_echoes/1,
+         num_readies/1,
+         matrix/1
+        ]).
 
 -type commitment() :: #commitment{}.
 
@@ -77,3 +89,6 @@ num_echoes(#commitment{echoes=Echoes}) ->
 
 num_readies(#commitment{readies=Readies}) ->
     maps:size(Readies).
+
+matrix(#commitment{matrix=Matrix}) ->
+    Matrix.

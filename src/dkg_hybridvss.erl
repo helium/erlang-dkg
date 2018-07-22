@@ -2,7 +2,7 @@
 
 -export([init/6]).
 
--export([input/2]).
+-export([input/2, commitment/1]).
 
 -export([handle_msg/3]).
 
@@ -21,6 +21,10 @@
             readies = #{} :: map(),
             commitment :: undefined | dkg_commitment:commitment()
          }).
+
+-type vss() :: #state{}.
+
+-export_type([vss/0]).
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> #state{}.
 init(Id, N, F, T, Generator, Session) ->
@@ -147,3 +151,6 @@ handle_msg(State, _Sender, Msg) ->
 
 allnodes(N) ->
     lists:seq(1, N).
+
+commitment(State) ->
+    State#state.commitment.

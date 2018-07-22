@@ -95,7 +95,36 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                                 true ->
                                     %% TODO presumably we need to check this when we get a VSS result as well?
                                     %% do some magic shit to create the key shard
-                                    {State#state{readies_this_round=ReadiesThisRound}, {result, done}};
+
+                                    %% XXX
+                                    %% ====================================================
+                                    %% multiply the commitment matrices for each commitment
+                                    %% and ignore the readies and echoes inside the commitment?
+                                    %% is that what we're supposed to do?
+                                    %% we also have dkg_commitment:mul, but it does the same thing as this
+                                    %% don't know what happens to the readies and echos, perhaps those
+                                    %% don't matter once this point is reached
+                                    Matrices = [ dkg_commitment:matrix(dkg_hybridvss:commitment(VSS)) || {_VSSId, VSS} <- maps:to_list(State#state.vss_map)],
+                                    OutputMatrix = lists:foldl(fun(Matrix, Acc) ->
+                                                                       dkg_commitmentmatrix:mul(Matrix, Acc)
+                                                                       %% this matrix multiplication is commutative?
+                                                               end, hd(Matrices), Matrices), %% this is probably C in the output message
+                                    ct:pal("OutputMatrix: ~p", [OutputMatrix]),
+                                    %% ====================================================
+
+                                    %% XXX
+                                    %% ====================================================
+                                    %% add the shares up and output that
+                                    Shares = find_shares(State#state.vss_done_this_round),
+                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', State#state.u), 0),
+                                    Shard = lists:foldl(fun(Share, Acc) ->
+                                                                erlang_pbc:element_add(Share, Acc)
+                                                        end, Zero, Shares),
+
+                                    ct:pal("Id: ~p, Shard: ~p", [State#state.id, Shard]),
+                                    %% ====================================================
+
+                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {OutputMatrix, Shard}}};
                                 false ->
                                     {State#state{readies_this_round=ReadiesThisRound}, ok}
                             end;
@@ -118,3 +147,20 @@ wrap(Id, [{multicast, Msg}|T]) ->
 wrap(Id, [{unicast, Dest, Msg}|T]) ->
     [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
 
+find_shares(NodesAndShares) ->
+    {Indices0, Elements} = lists:unzip(maps:to_list(NodesAndShares)),
+    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
+    Shares = lists:foldl(fun(Index, Acc) ->
+                                 case maps:is_key(Index, NodesAndShares) of
+                                     false ->
+                                         %% Node ${Index} has not sent us a share, interpolate it
+                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
+                                         LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
+                                         InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
+                                         [ InterpolatedShare | Acc];
+                                     true ->
+                                         %% Node ${Index} has sent us a share
+                                         [ maps:get(Index, NodesAndShares) | Acc]
+                                 end
+                         end, [], [0 | lists:seq(1, maps:size(NodesAndShares))]), %% note that we also evaluate at 0
+    lists:reverse(Shares).
