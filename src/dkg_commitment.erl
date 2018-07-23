@@ -54,7 +54,7 @@ public_key_share(Commitment, NodeID) ->
 verify_point(Commitment, SenderID, VerifierID, Point) ->
     dkg_commitmentmatrix:verify_point(Commitment#commitment.generator, Commitment#commitment.matrix, SenderID, VerifierID, Point).
 
--spec interpolate(commitment(), echo | ready, [pos_integer(), ...]) -> [erlang_pbc:element()].
+-spec interpolate(commitment(), echo | ready, [pos_integer()]) -> [erlang_pbc:element()].
 interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
     Map = case EchoOrReady of
                echo -> Commitment#commitment.echoes;
