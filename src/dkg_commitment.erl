@@ -3,6 +3,7 @@
 -record(commitment, {
           matrix :: dkg_commitmentmatrix:matrix(),
           generator :: erlang_pbc:element(),
+          nodes = [] :: [pos_integer()],
           echoes= #{} :: map(),
           readies=#{} :: map()
          }).
@@ -20,15 +21,16 @@
          add_ready/3,
          num_echoes/1,
          num_readies/1,
-         matrix/1
+         matrix/1,
+         set_matrix/2
         ]).
 
 -type commitment() :: #commitment{}.
 
-new(_NodeIDs, Generator, Degree) when is_integer(Degree) ->
-    #commitment{matrix=dkg_commitmentmatrix:new(Generator, Degree), generator=Generator};
-new(_NodeIDs, Generator, BiPoly) ->
-    #commitment{matrix=dkg_commitmentmatrix:new(Generator, BiPoly), generator=Generator}.
+new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
+    #commitment{nodes=NodeIDs, matrix=dkg_commitmentmatrix:new(Generator, Degree), generator=Generator};
+new(NodeIDs, Generator, BiPoly) ->
+    #commitment{nodes=NodeIDs, matrix=dkg_commitmentmatrix:new(Generator, BiPoly), generator=Generator}.
 
 cmp(CommitmentA, CommitmentB) ->
     dkg_commitmentmatrix:cmp(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
@@ -69,16 +71,16 @@ interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
                          end, [], [0 | ActiveNodeIDs]), %% note that we also evaluate at 0
     lists:reverse(Shares).
 
-add_echo(Commitment = #commitment{echoes=Echoes}, NodeID, Echo) when NodeID /= 0 ->
-    case maps:is_key(NodeID, Echoes) of
+add_echo(Commitment = #commitment{nodes=Nodes, echoes=Echoes}, NodeID, Echo) when NodeID /= 0 ->
+    case lists:member(NodeID, Nodes) andalso maps:is_key(NodeID, Echoes) of
         true ->
             {false, Commitment};
         false ->
             {true, Commitment#commitment{echoes = maps:put(NodeID, Echo, Echoes)}}
     end.
 
-add_ready(Commitment = #commitment{readies=Readies}, NodeID, Ready) when NodeID /= 0 ->
-    case maps:is_key(NodeID, Readies) of
+add_ready(Commitment = #commitment{nodes=Nodes, readies=Readies}, NodeID, Ready) when NodeID /= 0 ->
+    case lists:member(NodeID, Nodes) andalso maps:is_key(NodeID, Readies) of
         true ->
             {false, Commitment};
         false ->
@@ -93,3 +95,6 @@ num_readies(#commitment{readies=Readies}) ->
 
 matrix(#commitment{matrix=Matrix}) ->
     Matrix.
+
+set_matrix(C = #commitment{}, Matrix) ->
+    C#commitment{matrix=Matrix}.
