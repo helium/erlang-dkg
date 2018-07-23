@@ -1,6 +1,6 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3]).
+-export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3, serialize/1, deserialize/2]).
 
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
@@ -79,3 +79,16 @@ public_key_share(U, Matrix, NodeID) ->
                                           end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
                         erlang_pbc:element_mul(R, Row)
                 end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))).
+
+serialize(Matrix) ->
+    lists:foldl(fun({I, J}, Acc) ->
+                      insert([I, J], Acc, erlang_pbc:element_to_binary(lookup([I,J], Acc)))
+              end, Matrix,
+      [ {I, J} || I <- lists:seq(1, tuple_size(Matrix)), J <- lists:seq(1, tuple_size(Matrix))]).
+
+deserialize(Matrix, U) ->
+    lists:foldl(fun({I, J}, Acc) ->
+                      insert([I, J], Acc, erlang_pbc:binary_to_element(U, lookup([I,J], Acc)))
+              end, Matrix,
+      [ {I, J} || I <- lists:seq(1, tuple_size(Matrix)), J <- lists:seq(1, tuple_size(Matrix))]).
+
