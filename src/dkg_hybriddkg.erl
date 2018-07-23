@@ -82,7 +82,7 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
         true ->
             {State, ok}
     end;
-handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}) ->
+handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
     case lists:member(Sender, State#state.readies_this_round) of
         false ->
             ReadiesThisRound = [Sender | State#state.readies_this_round],
@@ -97,26 +97,10 @@ handle_msg(State = #state{n=N, t=T, u=U, f=F}, Sender, {ready, Session, VSSDone}
                                 true ->
                                     %% TODO presumably we need to check this when we get a VSS result as well?
                                     %% do some magic shit to create the key shard
-
-                                    %% XXX: multiply the commitment matrices for each commitment
-                                    %% and ignore the readies and echoes inside the commitment
-                                    OutputCommitment = lists:foldl(fun(VSSId, Acc) ->
-                                                                           {Matrix, _} = maps:get(VSSId, State#state.vss_done_this_round),
-                                                                           dkg_commitment:mul(Acc, Matrix)
-                                                                   end, dkg_commitment:new(lists:seq(1, N), U, T), VSSDone),
-
-                                    %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
-                                    VerificationKey = dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)),
-                                    true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
-                                    PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
-
-                                    %% XXX: add the shares up and output that
-                                    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
-                                    Shard = lists:foldl(fun(VSSId, Acc) ->
-                                                                {_, Share} = maps:get(VSSId, State#state.vss_done_this_round),
-                                                                erlang_pbc:element_add(Acc, Share)
-                                                        end, Zero, VSSDone),
-
+                                    OutputCommitment = output_commitment(State, VSSDone),
+                                    PublicKeyShares = public_key_shares(State, OutputCommitment),
+                                    VerificationKey = verification_key(OutputCommitment),
+                                    Shard = shard(State, VSSDone),
                                     {State#state{readies_this_round=ReadiesThisRound}, {result, {Shard, VerificationKey, PublicKeyShares}}};
                                 false ->
                                     {State#state{readies_this_round=ReadiesThisRound}, ok}
@@ -139,3 +123,31 @@ wrap(Id, [{multicast, Msg}|T]) ->
     [{multicast, {Id, Msg}}|wrap(Id, T)];
 wrap(Id, [{unicast, Dest, Msg}|T]) ->
     [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
+
+%% helper functions
+output_commitment(State, VSSDone) ->
+    [FirstCommitment | RemainingCommitments] = lists:foldl(fun(VSSId, Acc) ->
+                                                                   {Commitment, _} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                                   [Commitment | Acc]
+                                                           end, [], VSSDone),
+    lists:foldl(fun(Commitment, Acc) ->
+                        dkg_commitment:mul(Acc, Commitment)
+                end, FirstCommitment, RemainingCommitments).
+
+public_key_shares(State, OutputCommitment) ->
+    %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
+    VerificationKey = verification_key(OutputCommitment),
+    true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
+    [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, State#state.n)].
+
+verification_key(OutputCommitment) ->
+    dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
+
+shard(State, VSSDone) ->
+    [FirstShare | RemainingShares] = lists:foldl(fun(VSSId, Acc) ->
+                                                         {_, Share} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                         [Share | Acc]
+                                                 end, [], VSSDone),
+    lists:foldl(fun(Share, Acc) ->
+                        erlang_pbc:element_add(Acc, Share)
+                end, FirstShare, RemainingShares).
