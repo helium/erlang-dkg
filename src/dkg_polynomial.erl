@@ -14,7 +14,7 @@
          is_equal/2,
          print/1]).
 
--type polynomial() :: [erlang_pbc:element(), ...].
+-type polynomial() :: [erlang_pbc:element()].
 -export_type([polynomial/0]).
 
 %% Create a random polynomial of degree t >= 0
