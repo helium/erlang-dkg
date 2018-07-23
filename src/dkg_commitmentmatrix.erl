@@ -1,6 +1,6 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3]).
+-export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3, serialize/1, deserialize/2]).
 
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
@@ -22,7 +22,7 @@ cmp(MatrixA, MatrixB) ->
     lists:all(fun({I, J}) ->
                       erlang_pbc:element_cmp(lookup([I, J], MatrixA), lookup([I,J], MatrixB))
               end,
-      [ {I, J} || I <- lists:seq(1, tuple_size(MatrixA)), J <- lists:seq(1, tuple_size(MatrixA))]).
+      iter(MatrixA)).
 
 mul(MatrixA, MatrixB) ->
     %% Here each entry is multiplied with corresponding entry in the other matrix
@@ -33,7 +33,7 @@ mul(MatrixA, MatrixB) ->
     %% use a cartesian product to simplify the iteration
     lists:foldl(fun({Row, Col}, Acc) ->
                         insert([Row, Col], Acc, erlang_pbc:element_mul(lookup([Row, Col], MatrixA), lookup([Row, Col], MatrixB)))
-                end, MatrixA, [ {R, C} || R <- lists:seq(1, tuple_size(MatrixA)), C <- lists:seq(1, tuple_size(MatrixA))]).
+                end, MatrixA, iter(MatrixA)).
 
 verify_poly(U, Matrix, VerifierID, Poly) ->
     %% TODO obviously use something appropriate here
@@ -45,7 +45,7 @@ verify_poly(U, Matrix, VerifierID, Poly) ->
                         E1 = erlang_pbc:element_pow(U, lists:nth(L, Poly)),
                         E2 = lists:foldl(fun(J, Acc2) ->
                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([J, L], Matrix))
-                                         end, erlang_pbc:element_set(U, 1), lists:reverse(lists:seq(1, tuple_size(Matrix)))),
+                                         end, erlang_pbc:element_set(U, 1), lists:reverse(lists:seq(1, sz(Matrix)))),
                         erlang_pbc:element_cmp(E1, E2)
                 end, true, lists:seq(1, length(Poly))).
 
@@ -59,9 +59,9 @@ verify_point(U, Matrix, SenderID, VerifierID, Point) ->
                               R = erlang_pbc:element_pow(Acc, M),
                               Row = lists:foldl(fun(J, Acc2) ->
                                                         erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                                end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
+                                                end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
                               erlang_pbc:element_mul(R, Row)
-                      end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
+                      end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
     erlang_pbc:element_cmp(Ga, Res).
 
 public_key_share(U, Matrix, NodeID) ->
@@ -76,6 +76,22 @@ public_key_share(U, Matrix, NodeID) ->
                         R = erlang_pbc:element_pow(Acc, M),
                         Row = lists:foldl(fun(J, Acc2) ->
                                                   erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                          end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
+                                          end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
                         erlang_pbc:element_mul(R, Row)
-                end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))).
+                end, G1, lists:reverse(lists:seq(1, sz(Matrix)))).
+
+serialize(Matrix) ->
+    lists:foldl(fun({I, J}, Acc) ->
+                      insert([I, J], Acc, erlang_pbc:element_to_binary(lookup([I,J], Acc)))
+              end, Matrix, iter(Matrix)).
+
+deserialize(Matrix, U) ->
+    lists:foldl(fun({I, J}, Acc) ->
+                      insert([I, J], Acc, erlang_pbc:binary_to_element(U, lookup([I,J], Acc)))
+              end, Matrix, iter(Matrix)).
+
+iter(Matrix) ->
+    [ {I, J} || I <- lists:seq(1, sz(Matrix)), J <- lists:seq(1, sz(Matrix))].
+
+sz(Matrix) ->
+    tuple_size(Matrix).
