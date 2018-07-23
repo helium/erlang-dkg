@@ -32,7 +32,6 @@ init(Id, N, F, T, Generator, Session) ->
            n=N,
            f=F,
            t=T,
-           %commitment = dkg_commitment:new(allnodes(N), Generator, T),
            session=Session,
            u=Generator}.
 
@@ -43,13 +42,13 @@ init(Id, N, F, T, Generator, Session) ->
 %%         aj(y) ← φ(j,y); send the message (Pd, τ, send, C, aj) to Pj
 input(State = #state{session=Session={Dealer,_}, id=Id, u=U, t=T, n=N}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U, T, Secret),
-    Commitment = dkg_commitment:new(allnodes(N), U, BiPoly),
+    Commitment = dkg_commitment:new(dkg_util:allnodes(N), U, BiPoly),
 
     Msgs = lists:map(fun(Node) ->
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
                              Aj = dkg_bipolynomial:apply(BiPoly, NodeZr),
                              {unicast, Node, {send, {Session, Commitment, Aj}}}
-                     end, allnodes(N)),
+                     end, dkg_util:allnodes(N)),
     NewState = State#state{commitment=Commitment},
     {NewState, {send, Msgs}};
 input(_State, _Secret) ->
@@ -68,7 +67,7 @@ handle_msg(State=#state{n=N, session=Session, sent_echo=false}, Sender, {send, {
                          end,
             Msgs = lists:map(fun(Node) ->
                                      {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:apply(A, Node)}}}
-                             end, allnodes(N)),
+                             end, dkg_util:allnodes(N)),
             {State#state{sent_echo=true, commitment=Commitment}, {send, Msgs}};
         false ->
             {error, bad_commitment}
@@ -96,10 +95,10 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, session=Session}, Sender
                     case dkg_commitment:num_echoes(NewCommitment) == ceil((N+T+1)/2) andalso
                          dkg_commitment:num_readies(NewCommitment) < (T+1) of
                         true ->
-                            Subshares = dkg_commitment:interpolate(NewCommitment, echo, allnodes(N)),
+                            Subshares = dkg_commitment:interpolate(NewCommitment, echo, dkg_util:allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, Commitment0, lists:nth(Node+1, Subshares)}}}
-                                             end, allnodes(N)),
+                                             end, dkg_util:allnodes(N)),
                             NewState = State#state{echoes=maps:put(Sender, true, Echoes), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
                         false ->
@@ -135,10 +134,10 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
                          dkg_commitment:num_echoes(NewCommitment) < ceil((N+T+1)/2) of
                         true ->
-                            SubShares = dkg_commitment:interpolate(NewCommitment, ready, allnodes(N)),
+                            SubShares = dkg_commitment:interpolate(NewCommitment, ready, dkg_util:allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, Commitment0, lists:nth(Node+1, SubShares)}}}
-                                             end, allnodes(N)),
+                                             end, dkg_util:allnodes(N)),
                             NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment},
                             {NewState, {send, Msgs}};
                         false ->
@@ -160,9 +159,6 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
     end;
 handle_msg(State, _Sender, Msg) ->
     {State, {unhandled_msg, Msg}}.
-
-allnodes(N) ->
-    lists:seq(1, N).
 
 commitment(State) ->
     State#state.commitment.

@@ -21,6 +21,14 @@
           session :: session()
          }).
 
+%% upon initialization:
+%%      e(L, Q) <- 0 and r(L, Q) <- 0 for every Q; Qbar <- ∅; Q <- ∅
+%%      Mbar <- Rhat <- n-t-f signed lead-ch messages for leader L
+%%      cnt ← 0; cntl ← 0 for all l ∈ [1, n];
+%%      lcl ← 0 for each leader L; lcflag ← false
+%%      Lnext ← L + n − 1
+%%      for all d ∈ [1, n] do
+%%          initialize extended-HybridVSS Sh protocol (Pd, τ )
 init(Id, N, F, T, Generator, Round) ->
     Session = {1, Round},
     {VSSes, Msgs} = lists:foldl(fun(E, {Map, ToSendAcc}) ->
@@ -29,19 +37,26 @@ init(Id, N, F, T, Generator, Round) ->
                                   true ->
                                       Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
                                       {NewVSS, {send, ToSend}} = dkg_hybridvss:input(VSS, Secret),
-                                      {maps:put(E, NewVSS, Map), wrap({vss, E, Session}, ToSend)};
+                                      {maps:put(E, NewVSS, Map), dkg_util:wrap({vss, E, Session}, ToSend)};
                                   false ->
                                       {maps:put(E, VSS, Map), ToSendAcc}
                               end
-                      end, {#{}, []}, lists:seq(1, N)),
+                      end, {#{}, []}, dkg_util:allnodes(N)),
     {#state{id=Id, n=N, f=F, t=T, u=Generator, session=Session, vss_map=VSSes}, {send, Msgs}}.
 
+%% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
+%% Qhat ← {Pd}; Rhat ← {Rd}
+%% if |Qhat| = t + 1 and Qbar = ∅ then
+%%      if Pi = L then
+%%          send the message (L, τ, send, Qhat, Rhat) to each Pj
+%%       else
+%%          delay ← delay(T); start timer(delay)
 handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VssID, State#state.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
             {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
-            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, {send, wrap({vss, VssID, Session}, ToSend)}};
+            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, {send, dkg_util:wrap({vss, VssID, Session}, ToSend)}};
         {NewVSS, {result, {_Session, Commitment, Si}}} ->
             %% TODO 'extended' VSS should output signed ready messages
             VSSDoneThisRound = maps:put(VssID, {Commitment, Si}, State#state.vss_done_this_round),
@@ -60,6 +75,10 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Se
                     {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
             end
     end;
+
+%% upon a message (L, τ, send, Q, R/M) from L (first time):
+%%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
+%%          send the message (L, τ, echo, Q)sign to each Pj
 handle_msg(State = #state{session=Session={Leader, _}}, Sender, {send, Session, VSSDone}) when Sender == Leader ->
     %% TODO verify signatures
     case maps:size(State#state.vss_done_last_round) == 0 orelse lists:sort(maps:keys(State#state.vss_done_this_round)) == lists:sort(VSSDone) of
@@ -68,6 +87,12 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {send, Session, 
         false ->
             {State, ok}
     end;
+
+%% upon a message (L, τ, echo, Q)sign from Pm (first time):
+%%      e(L,Q) ← e(L,Q) + 1
+%%      if e(L,Q) = ceil((n+t+1)/2) and r(L,Q) < t + 1 then
+%%          Qbar ← Q; Mbar ← ceil((n+t+1)/2) signed echo messages for Q
+%%          send the message (L, τ, ready, Q)sign to each Pj
 handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VSSDone}) ->
     case lists:member(Sender, State#state.echoes_this_round) of
         false ->
@@ -82,6 +107,17 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
         true ->
             {State, ok}
     end;
+
+%% upon a message (L, τ, ready, Q)sign from Pm (first time):
+%%      r(L,Q) ← r(L,Q) + 1
+%%      if r(L,Q) = t + 1 and e(L,Q) < ceil((n+t+1)2) then
+%%          Qbar ← Q; Mbar ← t + 1 signed ready messages for Q
+%%          send the message (L, τ, ready, Q)sign to each Pj
+%%      else if r(L,Q) = n − t − f then
+%%          STOP TIMER, if any
+%%          WAIT for shared output-messages for each Pd ∈ Q
+%%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
+%%          output (L, τ, DKG-completed, C, si)
 handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
     case lists:member(Sender, State#state.readies_this_round) of
         false ->
@@ -96,7 +132,6 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
                             case lists:all(fun(E) -> maps:is_key(E, State#state.vss_done_this_round) end, ReadiesThisRound) of
                                 true ->
                                     %% TODO presumably we need to check this when we get a VSS result as well?
-                                    %% do some magic shit to create the key shard
                                     OutputCommitment = output_commitment(State, VSSDone),
                                     PublicKeyShares = public_key_shares(State, OutputCommitment),
                                     VerificationKey = verification_key(OutputCommitment),
@@ -115,37 +150,25 @@ handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
 handle_msg(State, _Sender, Msg) ->
     {State, {unhandled_msg, Msg}}.
 
-%% wrap a subprotocol's outbound messages with a protocol identifier
--spec wrap(Tag :: atom() | {atom(), non_neg_integer()}, [{multicast, Msg :: any()} | {unicast, non_neg_integer(),  Msg :: any()}]) -> [{multicast, {Tag, Msg}} | {unicast, non_neg_integer(), {Tag, Msg}}].
-wrap(_, []) ->
-    [];
-wrap(Id, [{multicast, Msg}|T]) ->
-    [{multicast, {Id, Msg}}|wrap(Id, T)];
-wrap(Id, [{unicast, Dest, Msg}|T]) ->
-    [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
-
 %% helper functions
-output_commitment(State, VSSDone) ->
+output_commitment(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstCommitment | RemainingCommitments] = lists:foldl(fun(VSSId, Acc) ->
-                                                                   {Commitment, _} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                                   {Commitment, _} = maps:get(VSSId, VSSDoneThisRound),
                                                                    [Commitment | Acc]
                                                            end, [], VSSDone),
     lists:foldl(fun(Commitment, Acc) ->
                         dkg_commitment:mul(Acc, Commitment)
                 end, FirstCommitment, RemainingCommitments).
 
-public_key_shares(State, OutputCommitment) ->
-    %% XXX: YOLO, just assume that each result also contains this, refer the dkg init test for more info
-    VerificationKey = verification_key(OutputCommitment),
-    true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
-    [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, State#state.n)].
+public_key_shares(_State=#state{n=N}, OutputCommitment) ->
+    [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- dkg_util:allnodes(N)].
 
 verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
-shard(State, VSSDone) ->
+shard(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstShare | RemainingShares] = lists:foldl(fun(VSSId, Acc) ->
-                                                         {_, Share} = maps:get(VSSId, State#state.vss_done_this_round),
+                                                         {_, Share} = maps:get(VSSId, VSSDoneThisRound),
                                                          [Share | Acc]
                                                  end, [], VSSDone),
     lists:foldl(fun(Share, Acc) ->
