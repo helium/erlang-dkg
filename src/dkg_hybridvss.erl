@@ -23,10 +23,14 @@
          }).
 
 -type vss() :: #state{}.
+-type send_msg() :: {unicast, pos_integer(), {send, {session(), dkg_commitment:commitment(), erlang_pbc:element()}}}.
+-type echo_msg() :: {unicast, pos_integer(), {echo, {session(), dkg_commitment:commitment(), erlang_pbc:element()}}}.
+-type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitment:commitment(), erlang_pbc:element()}}}.
+-type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 
 -export_type([vss/0]).
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> #state{}.
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> vss().
 init(Id, N, F, T, Generator, Session) ->
     case erlang_pbc:pairing_is_symmetric(Generator) of
         true ->
@@ -35,7 +39,7 @@ init(Id, N, F, T, Generator, Session) ->
             erlang:error(pairing_not_symmetric)
     end.
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> #state{}.
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> vss().
 init(Id, N, F, T, Generator, G2, Session) ->
     #state{id=Id,
            n=N,
@@ -50,13 +54,14 @@ init(Id, N, F, T, Generator, G2, Session) ->
 %%     C ←{Cjl } t j,l=0 where Cjl = gφ^jl for j,l ∈[0,t]
 %%     for all j ∈ [1,n] do
 %%         aj(y) ← φ(j,y); send the message (Pd, τ, send, C, aj) to Pj
+-spec input(State :: vss(), Secret :: erlang_pbc:element()) -> {vss(), {send, [send_msg()]}} | {error, not_dealer}.
 input(State = #state{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U2, T, Secret),
     Commitment = dkg_commitment:new(dkg_util:allnodes(N), U2, BiPoly),
 
     Msgs = lists:map(fun(Node) ->
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                             Aj = dkg_bipolynomial:apply(BiPoly, NodeZr),
+                             Aj = dkg_bipolynomial:evaluate(BiPoly, NodeZr),
                              {unicast, Node, {send, {Session, Commitment, Aj}}}
                      end, dkg_util:allnodes(N)),
     NewState = State#state{commitment=Commitment},
@@ -68,6 +73,11 @@ input(_State, _Secret) ->
 %%     if verify-poly(C, i, a) then
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
+-spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), [echo_msg()] | [ready_msg()]} |
+                                                                                 {error, bad_commitment} |
+                                                                                 {vss(), {error, already_received_commitment}} |
+                                                                                 {vss(), ok} |
+                                                                                 {vss(), result()}.
 handle_msg(State=#state{n=N, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, Commitment0, A}}) ->
     case dkg_commitment:verify_poly(Commitment0, State#state.id, A) of
         true ->
@@ -76,7 +86,7 @@ handle_msg(State=#state{n=N, session=Session, sent_echo=false}, Sender, {send, {
                              C -> C
                          end,
             Msgs = lists:map(fun(Node) ->
-                                     {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:apply(A, Node)}}}
+                                     {unicast, Node, {echo, {Session, Commitment0, dkg_polynomial:evaluate(A, Node)}}}
                              end, dkg_util:allnodes(N)),
             {State#state{sent_echo=true, commitment=Commitment}, {send, Msgs}};
         false ->
@@ -121,7 +131,6 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, session=Session}, Sender
         false ->
             {State, ok}
     end;
-
 
 %% upon a message (Pd, τ, ready, C, α) from Pm (first time):
 %%     if verify-point(C, i, m, α) then

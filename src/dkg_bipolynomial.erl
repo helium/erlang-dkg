@@ -5,13 +5,16 @@
          add/2,
          sub/2,
          degree/1,
-         apply/2,
+         evaluate/2,
          print/1,
          cmp/2,
          is_zero/1,
          lookup/2]).
 
--spec generate(erlang_pbc:group(), pos_integer()) -> tuple().
+-type row() :: {erlang_pbc:element(), erlang_pbc:element(), erlang_pbc:element()}.
+-type bipolynomial() :: {row(), row(), row()}.
+
+-spec generate(erlang_pbc:element(), pos_integer()) -> bipolynomial().
 %% generate a bivariate polynomial of degree T
 generate(Pairing, T) ->
     lists:foldl(fun(I, Acc) ->
@@ -27,21 +30,27 @@ generate(Pairing, T) ->
                 end, list_to_tuple(lists:duplicate(T+1, {})), lists:seq(0, T)).
 
 %% generate a bivariate polynomial of degree T with a fixed term
+-spec generate(erlang_pbc:element(), pos_integer(), erlang_pbc:element() | integer()) -> bipolynomial().
 generate(Pairing, T, Term) ->
     insert([1, 1], generate(Pairing, T), Term).
 
+-spec add(bipolynomial(), bipolynomial()) -> bipolynomial().
 add(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_add/2).
 
+-spec sub(bipolynomial(), bipolynomial()) -> bipolynomial().
 sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
+-spec is_zero(bipolynomial()) -> boolean().
 is_zero(Poly) ->
     tuple_size(Poly) == 0.
 
+-spec degree(bipolynomial()) -> non_neg_integer().
 degree(Poly) ->
     tuple_size(Poly) - 1.
 
+-spec cmp(bipolynomial(), bipolynomial()) -> boolean().
 cmp(PolyA, PolyB) ->
     %% check whether degree(PolyA) == degree(PolyB)
     %% and all the coefficients should match
@@ -52,7 +61,8 @@ cmp(PolyA, PolyB) ->
               end,
               [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))]).
 
-apply(Poly, X) ->
+-spec evaluate(bipolynomial(), erlang_pbc:element()) -> erlang_pbc:element().
+evaluate(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
     Result = [], %% empty result polynomial
     %% go in reverse for coefficient rows
@@ -61,11 +71,13 @@ apply(Poly, X) ->
                         dkg_polynomial:add(Temp, tuple_to_list(Row))
                 end, Result, lists:reverse(tuple_to_list(Poly))).
 
+-spec print(bipolynomial()) -> any().
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
                                     list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
                             end, tuple_to_list(Poly))).
 
+-spec merge(bipolynomial(), bipolynomial(), fun()) -> bipolynomial().
 merge(PolyA, PolyB, MergeFun) ->
     Degree = max(degree(PolyA), degree(PolyB)),
     %% find the bigger term
@@ -87,6 +99,7 @@ merge(PolyA, PolyB, MergeFun) ->
     %% and delete any rows at the end that are all 0s
     prune(MergedPoly).
 
+-spec expand(bipolynomial(), non_neg_integer(), erlang_pbc:element()) -> bipolynomial().
 expand(Poly, Degree, Padding) ->
     case degree(Poly) == Degree of
         true ->

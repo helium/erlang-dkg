@@ -1,5 +1,5 @@
 -module(dkg_polynomial_SUITE).
--compile({no_auto_import,[apply/2]}).
+-compile({no_auto_import,[evaluate/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -82,7 +82,7 @@ f_of_x_test(Config) ->
     Five = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 5),
     Six = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 6),
     Poly = dkg_polynomial:generate(Pairing, 2, Six, Five),
-    Ans = dkg_polynomial:apply(Poly, Six),
+    Ans = dkg_polynomial:evaluate(Poly, Six),
     ?assert(erlang_pbc:element_cmp(Five, Ans)).
 
 negative_comparison_test(Config) ->

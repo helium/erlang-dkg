@@ -1,6 +1,12 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3]).
+-export([new/2,
+         lookup/2,
+         cmp/2,
+         mul/2,
+         verify_poly/4,
+         verify_point/5,
+         public_key_share/3]).
 
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
