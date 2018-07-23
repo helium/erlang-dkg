@@ -14,6 +14,8 @@
 -type row() :: {erlang_pbc:element(), erlang_pbc:element(), erlang_pbc:element()}.
 -type bipolynomial() :: {row(), row(), row()}.
 
+-export_type([bipolynomial/0]).
+
 -spec generate(erlang_pbc:element(), pos_integer()) -> bipolynomial().
 %% generate a bivariate polynomial of degree T
 generate(Pairing, T) ->
@@ -61,7 +63,7 @@ cmp(PolyA, PolyB) ->
               end,
               [ erlang_pbc:element_cmp(lookup([I, J], PolyA), lookup([I, J], PolyB)) || I <- lists:seq(1, degree(PolyA)), J <- lists:seq(1, degree(PolyB))]).
 
--spec evaluate(bipolynomial(), erlang_pbc:element()) -> erlang_pbc:element().
+-spec evaluate(bipolynomial(), erlang_pbc:element()) -> dkg_polynomial:polynomial().
 evaluate(Poly, X) ->
     PolyX = [X], %% polynomial has degree 0
     Result = [], %% empty result polynomial
