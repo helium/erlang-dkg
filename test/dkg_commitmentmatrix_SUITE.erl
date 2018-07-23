@@ -65,7 +65,7 @@ public_key_share_test(Config) ->
     ct:pal("RandomBiPoly: ~p~n", [dkg_bipolynomial:print(RandomBiPoly)]),
     CommitmentMatrix = dkg_commitmentmatrix:new(Generator, RandomBiPoly),
     ct:pal("CommitmentMatrix: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix)]),
-    PublicKeySharePolynomial = [ dkg_commitmentmatrix:public_key_share(CommitmentMatrix, NodeId) || NodeId <- lists:seq(1, 6)],
+    PublicKeySharePolynomial = [ dkg_commitmentmatrix:public_key_share(Generator, CommitmentMatrix, NodeId) || NodeId <- lists:seq(1, 6)],
     ct:pal("PublicKeyShares: ~p~n", [dkg_polynomial:print(PublicKeySharePolynomial)]),
     KnownSecret = dkg_polynomial:apply(PublicKeySharePolynomial, 0),
     ct:pal("KnownSecret: ~p~n", [erlang_pbc:element_to_string(KnownSecret)]),

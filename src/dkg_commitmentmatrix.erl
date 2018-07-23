@@ -4,7 +4,7 @@
 
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
-    One = erlang_pbc:element_set(erlang_pbc:element_new('G1', Generator), 1),
+    One = erlang_pbc:element_set(Generator, 1),
     list_to_tuple(lists:foldl(fun(_, Acc) ->
                                       [list_to_tuple(lists:duplicate(T+1, One))| Acc]
                               end, [], lists:seq(0, T)));
