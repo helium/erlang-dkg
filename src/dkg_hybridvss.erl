@@ -1,11 +1,10 @@
 -module(dkg_hybridvss).
 
--export([init/6]).
+-export([init/6, init/7]).
 
 -export([input/2, commitment/1]).
 
 -export([handle_msg/3]).
-
 
 -type session() :: {Dealer :: pos_integer(), Round :: pos_integer()}.
 
@@ -15,6 +14,7 @@
             f :: pos_integer(),
             t :: pos_integer(),
             u :: erlang_pbc:element(),
+            u2 :: erlang_pbc:element(),
             session :: session(),
             sent_echo = false :: boolean(),
             echoes = #{} :: map(),
@@ -28,21 +28,31 @@
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> #state{}.
 init(Id, N, F, T, Generator, Session) ->
+    case erlang_pbc:pairing_is_symmetric(Generator) of
+        true ->
+            init(Id, N, F, T, Generator, Generator, Session);
+        false ->
+            erlang:error(pairing_not_symmetric)
+    end.
+
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> #state{}.
+init(Id, N, F, T, Generator, G2, Session) ->
     #state{id=Id,
            n=N,
            f=F,
            t=T,
            session=Session,
-           u=Generator}.
+           u=Generator,
+           u2=G2}.
 
 %% upon a message (Pd, τ, in, share, s): /* only Pd */
 %%     choose a symmetric bivariate polynomial φ(x,y) = ∑tj,l=0 φjl x^j y^l ∈R Zp[x,y] and φ00 = s
 %%     C ←{Cjl } t j,l=0 where Cjl = gφ^jl for j,l ∈[0,t]
 %%     for all j ∈ [1,n] do
 %%         aj(y) ← φ(j,y); send the message (Pd, τ, send, C, aj) to Pj
-input(State = #state{session=Session={Dealer,_}, id=Id, u=U, t=T, n=N}, Secret) when Dealer == Id ->
-    BiPoly = dkg_bipolynomial:generate(U, T, Secret),
-    Commitment = dkg_commitment:new(dkg_util:allnodes(N), U, BiPoly),
+input(State = #state{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secret) when Dealer == Id ->
+    BiPoly = dkg_bipolynomial:generate(U2, T, Secret),
+    Commitment = dkg_commitment:new(dkg_util:allnodes(N), U2, BiPoly),
 
     Msgs = lists:map(fun(Node) ->
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),

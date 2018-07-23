@@ -1,6 +1,6 @@
 -module(dkg_commitmentmatrix).
 
--export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/2]).
+-export([new/2, lookup/2, cmp/2, mul/2, verify_poly/4, verify_point/5, public_key_share/3]).
 
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
@@ -52,7 +52,7 @@ verify_poly(U, Matrix, VerifierID, Poly) ->
 verify_point(U, Matrix, SenderID, VerifierID, Point) ->
     M = erlang_pbc:element_set(Point, SenderID),
     I = erlang_pbc:element_set(Point, VerifierID),
-    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', Point), 1),
+    G1 = erlang_pbc:element_set(U, 1),
 
     Ga = erlang_pbc:element_pow(U, Point),
     Res = lists:foldl(fun(II, Acc) ->
@@ -64,11 +64,11 @@ verify_point(U, Matrix, SenderID, VerifierID, Point) ->
                       end, G1, lists:reverse(lists:seq(1, tuple_size(Matrix)))),
     erlang_pbc:element_cmp(Ga, Res).
 
-public_key_share(Matrix, NodeID) ->
+public_key_share(U, Matrix, NodeID) ->
     %% TODO this shares significant code with verify_point, consider refactoring them to share common code
-    M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', lookup([1, 1], Matrix)), NodeID),
-    I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', lookup([1, 1], Matrix)), 0),
-    G1 = erlang_pbc:element_set(erlang_pbc:element_new('G1', lookup([1, 1], Matrix)), 1),
+    M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), NodeID),
+    I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
+    G1 = erlang_pbc:element_set(U, 1),
 
     %% return the public key share
     %% NOTE: C++ traverses the matrix in reverse, following the same

@@ -41,7 +41,7 @@ verify_poly(Commitment, VerifierID, Poly) ->
     dkg_commitmentmatrix:verify_poly(Commitment#commitment.generator, Commitment#commitment.matrix, VerifierID, Poly).
 
 public_key_share(Commitment, NodeID) ->
-    dkg_commitmentmatrix:public_key_share(Commitment#commitment.matrix, NodeID).
+    dkg_commitmentmatrix:public_key_share(Commitment#commitment.generator, Commitment#commitment.matrix, NodeID).
 
 verify_point(Commitment, SenderID, VerifierID, Point) ->
     dkg_commitmentmatrix:verify_point(Commitment#commitment.generator, Commitment#commitment.matrix, SenderID, VerifierID, Point).
