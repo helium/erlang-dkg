@@ -1,5 +1,5 @@
 -module(dkg_bipolynomial_SUITE).
--compile({no_auto_import,[apply/2]}).
+-compile({no_auto_import,[evaluate/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -11,7 +11,7 @@
          subtract_zero_test/1,
          add_different_sizes_test/1,
          negative_comparison_test/1,
-         apply_test/1]).
+         evaluate_test/1]).
 
 all() ->
     [generate_with_constant_term_test,
@@ -20,7 +20,7 @@ all() ->
      subtract_zero_test,
      add_different_sizes_test,
      negative_comparison_test,
-     apply_test].
+     evaluate_test].
 
 init_per_testcase(_, Config) ->
     Pairing = erlang_pbc:group_new('SS512'),
@@ -81,17 +81,17 @@ subtract_zero_test(Config) ->
     ?assert(dkg_bipolynomial:cmp(Poly, ZeroSubtractedPoly)),
     ok.
 
-apply_test(Config) ->
+evaluate_test(Config) ->
     Pairing = proplists:get_value(pairing, Config),
     Five = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 5),
     Six = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), 6),
     BiPoly = dkg_bipolynomial:generate(Pairing, 5),
 
-    PolyA = dkg_bipolynomial:apply(BiPoly, Five),
-    PolyB = dkg_bipolynomial:apply(BiPoly, Six),
+    PolyA = dkg_bipolynomial:evaluate(BiPoly, Five),
+    PolyB = dkg_bipolynomial:evaluate(BiPoly, Six),
 
-    ResultA = dkg_polynomial:apply(PolyA, Six),
-    ResultB = dkg_polynomial:apply(PolyB, Five),
+    ResultA = dkg_polynomial:evaluate(PolyA, Six),
+    ResultB = dkg_polynomial:evaluate(PolyB, Five),
     ?assert(erlang_pbc:element_cmp(ResultA, ResultB)),
     ok.
 

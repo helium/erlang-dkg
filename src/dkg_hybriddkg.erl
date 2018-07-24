@@ -6,6 +6,10 @@
 
 -type session() :: {Leader :: pos_integer(), Round :: pos_integer()}.
 
+ %% Q hat in the protocol
+-type qhat() :: #{pos_integer() => {dkg_commitment:commitment(), erlang_pbc:element()}}.
+-type qbar() :: #{pos_integer() => erlang_pbc:element()}.
+
 -record(state, {
           id :: pos_integer(),
           n :: pos_integer(),
@@ -16,8 +20,8 @@
           vss_map :: #{pos_integer() => dkg_hybridvss:vss()},
           echoes_this_round = [] :: [non_neg_integer()], %% eL,Q in the protocol, echoes seen this round
           readies_this_round = [] :: [non_neg_integer()], %% rL,Q in the protocol, readies seen this round
-          vss_done_this_round = #{} :: #{pos_integer() => {dkg_commitment:commitment(), erlang_pbc:element()}}, %% Q hat in the protocol
-          vss_done_last_round = #{} :: #{pos_integer() => erlang_pbc:element()}, %% Q bar in the protocol
+          vss_done_this_round = #{} :: qhat(),
+          vss_done_last_round = #{} :: qbar(),
           leader = 1 :: pos_integer(),
           session :: session()
          }).
@@ -41,25 +45,29 @@ init(Id, N, F, T, Generator, Round) ->
 init(Id, N, F, T, Generator, G2, Round) ->
     Session = {1, Round},
     {VSSes, Msgs} = lists:foldl(fun(E, {Map, ToSendAcc}) ->
-                              VSS = dkg_hybridvss:init(Id, N, F, T, Generator, G2, {E, Round}),
-                              case E == Id of
-                                  true ->
-                                      Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
-                                      {NewVSS, {send, ToSend}} = dkg_hybridvss:input(VSS, Secret),
-                                      {maps:put(E, NewVSS, Map), dkg_util:wrap({vss, E, Session}, ToSend)};
-                                  false ->
-                                      {maps:put(E, VSS, Map), ToSendAcc}
-                              end
-                      end, {#{}, []}, dkg_util:allnodes(N)),
+                                        VSS = dkg_hybridvss:init(Id, N, F, T, Generator, G2, {E, Round}),
+                                        case E == Id of
+                                            true ->
+                                                Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+                                                case dkg_hybridvss:input(VSS, Secret) of
+                                                    {NewVSS, {send, ToSend}} ->
+                                                        {maps:put(E, NewVSS, Map), dkg_util:wrap({vss, E, Session}, ToSend)};
+                                                    {OldVSS, ok} ->
+                                                        {OldVSS, ok}
+                                                end;
+                                            false ->
+                                                {maps:put(E, VSS, Map), ToSendAcc}
+                                        end
+                                end, {#{}, []}, dkg_util:allnodes(N)),
     {#state{id=Id, n=N, f=F, t=T, u=Generator, u2=G2, session=Session, vss_map=VSSes}, {send, Msgs}}.
 
 %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
-%% Qhat ← {Pd}; Rhat ← {Rd}
-%% if |Qhat| = t + 1 and Qbar = ∅ then
-%%      if Pi = L then
-%%          send the message (L, τ, send, Qhat, Rhat) to each Pj
-%%       else
-%%          delay ← delay(T); start timer(delay)
+%%      Qhat ← {Pd}; Rhat ← {Rd}
+%%      if |Qhat| = t + 1 and Qbar = ∅ then
+%%           if Pi = L then
+%%               send the message (L, τ, send, Qhat, Rhat) to each Pj
+%%            else
+%%               delay ← delay(T); start timer(delay)
 handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VssID, State#state.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
@@ -160,6 +168,7 @@ handle_msg(State, _Sender, Msg) ->
     {State, {unhandled_msg, Msg}}.
 
 %% helper functions
+-spec output_commitment(#state{}, [non_neg_integer()]) -> dkg_commitment:commitment().
 output_commitment(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstCommitment | RemainingCommitments] = lists:foldl(fun(VSSId, Acc) ->
                                                                    {Commitment, _} = maps:get(VSSId, VSSDoneThisRound),
@@ -169,12 +178,15 @@ output_commitment(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) 
                         dkg_commitment:mul(Acc, Commitment)
                 end, FirstCommitment, RemainingCommitments).
 
+-spec public_key_shares(#state{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
 public_key_shares(_State=#state{n=N}, OutputCommitment) ->
     [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- dkg_util:allnodes(N)].
 
+-spec verification_key(dkg_commitment:commitment()) -> erlang_pbc:element().
 verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
+-spec shard(#state{}, [non_neg_integer()]) -> erlang_pbc:element().
 shard(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstShare | RemainingShares] = lists:foldl(fun(VSSId, Acc) ->
                                                          {_, Share} = maps:get(VSSId, VSSDoneThisRound),

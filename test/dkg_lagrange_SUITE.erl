@@ -1,5 +1,5 @@
 -module(dkg_lagrange_SUITE).
--compile({no_auto_import,[apply/2]}).
+-compile({no_auto_import,[evaluate/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -27,7 +27,7 @@ numeric_fx2_test(Config) ->
     %% f(x) = x^2
     RandomShares = [ math:pow(Index, 2)  || Index <- Indices ],
     ct:pal("Random Shares: ~p~n", [RandomShares]),
-    Applied = apply(Coefficients, RandomShares),
+    Applied = evaluate(Coefficients, RandomShares),
     ct:pal("Applied: ~p~n", [Applied]),
     Applied = 25.0.
 
@@ -37,7 +37,7 @@ numeric_random_poly_test(Config) ->
     %% f(x) = 2x^3 + 7x^2 - 6x +5
     RandomShares = [ (2*math:pow(Index, 3)) + (7*math:pow(Index, 2)) - (6*Index) + 5  || Index <- Indices ],
     ct:pal("Random Shares: ~p~n", [RandomShares]),
-    Applied = apply(Coefficients, RandomShares),
+    Applied = evaluate(Coefficients, RandomShares),
     ct:pal("Applied: ~p~n", [Applied]),
     Applied = 400.0.
 
@@ -51,11 +51,11 @@ poly_test(_Config) ->
     ct:pal("Alpha: ~p~n", [erlang_pbc:element_to_string(Alpha)]),
     Coefficients = dkg_lagrange:coefficients(Indices, Alpha),
     ct:pal("Coefficients: ~p~n", [dkg_polynomial:print(Coefficients)]),
-    KnownValueAt4 = dkg_polynomial:apply(Poly, 4),
+    KnownValueAt4 = dkg_polynomial:evaluate(Poly, 4),
     ct:pal("KnownValueAt4: ~p~n", [erlang_pbc:element_to_string(KnownValueAt4)]),
-    Shares = [ dkg_polynomial:apply(Poly, Index)  || Index <- lists:seq(1, 3) ],
+    Shares = [ dkg_polynomial:evaluate(Poly, Index)  || Index <- lists:seq(1, 3) ],
     ct:pal("Shares: ~p~n", [dkg_polynomial:print(Shares)]),
-    Applied = dkg_lagrange:apply_zr(Coefficients, Shares),
+    Applied = dkg_lagrange:evaluate_zr(Coefficients, Shares),
     ct:pal("Applied: ~p~n", [erlang_pbc:element_to_string(Applied)]),
     ?assert(erlang_pbc:element_cmp(KnownValueAt4, Applied)),
     ok.
@@ -74,7 +74,7 @@ coefficients(Indices, Alpha) ->
                                       [Num/Den | Acc1]
                               end, [], enumerate(Indices))).
 
-apply(Coefficients, Shares) ->
+evaluate(Coefficients, Shares) ->
     Zero = 0,
     lists:foldl(fun({Coefficient, Share}, Acc) ->
                         Acc + (Share * Coefficient)

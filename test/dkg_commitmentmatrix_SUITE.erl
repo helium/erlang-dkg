@@ -1,5 +1,5 @@
 -module(dkg_commitmentmatrix_SUITE).
--compile({no_auto_import,[apply/2]}).
+-compile({no_auto_import,[evaluate/2]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -28,7 +28,7 @@ verify_poly_test(Config) ->
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
     BiPoly = dkg_bipolynomial:generate(Generator, 4, Secret),
     CommitmentMatrix = dkg_commitmentmatrix:new(Generator, BiPoly),
-    TaggedPolys = [ {I, dkg_bipolynomial:apply(BiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), I))} || I <- lists:seq(1, 4) ],
+    TaggedPolys = [ {I, dkg_bipolynomial:evaluate(BiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), I))} || I <- lists:seq(1, 4) ],
     ?assert(lists:all(fun({I, Poly}) ->
                               dkg_commitmentmatrix:verify_poly(Generator, CommitmentMatrix, I, Poly)
                       end, TaggedPolys)).
@@ -39,13 +39,13 @@ verify_point_test(Config) ->
     Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Pairing), <<"honeybadger">>),
     RandomBiPoly = dkg_bipolynomial:generate(Pairing, 4, Secret),
     CommitmentMatrix = dkg_commitmentmatrix:new(Generator, RandomBiPoly),
-    TaggedPolys = [ {J, dkg_bipolynomial:apply(RandomBiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), J))} || J <- lists:seq(1, 4) ],
+    TaggedPolys = [ {J, dkg_bipolynomial:evaluate(RandomBiPoly, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), J))} || J <- lists:seq(1, 4) ],
     Res = lists:map(fun({SenderId, Poly}) ->
                             case dkg_commitmentmatrix:verify_poly(Generator, CommitmentMatrix, SenderId, Poly) of
                                 true ->
                                     %% verify_poly succeeded, check verify_point for verifiers
                                     lists:map(fun({VerifierId, Poly2}) ->
-                                                      Point = dkg_polynomial:apply(Poly2, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), SenderId)),
+                                                      Point = dkg_polynomial:evaluate(Poly2, erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), SenderId)),
                                                       dkg_commitmentmatrix:verify_point(Generator, CommitmentMatrix, SenderId, VerifierId, Point)
                                               end, TaggedPolys);
                                 false ->
@@ -67,7 +67,7 @@ public_key_share_test(Config) ->
     ct:pal("CommitmentMatrix: ~p~n", [dkg_bipolynomial:print(CommitmentMatrix)]),
     PublicKeySharePolynomial = [ dkg_commitmentmatrix:public_key_share(Generator, CommitmentMatrix, NodeId) || NodeId <- lists:seq(1, 6)],
     ct:pal("PublicKeyShares: ~p~n", [dkg_polynomial:print(PublicKeySharePolynomial)]),
-    KnownSecret = dkg_polynomial:apply(PublicKeySharePolynomial, 0),
+    KnownSecret = dkg_polynomial:evaluate(PublicKeySharePolynomial, 0),
     ct:pal("KnownSecret: ~p~n", [erlang_pbc:element_to_string(KnownSecret)]),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', Pairing), I) || I <- lists:seq(1, 6) ],
     ct:pal("Indices: ~p~n", [dkg_polynomial:print(Indices)]),

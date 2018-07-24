@@ -81,7 +81,7 @@ init_test(Config) ->
                                          %% Node ${Index} has not sent us a share, interpolate it
                                          Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
                                          LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
-                                         InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
+                                         InterpolatedShare = dkg_lagrange:evaluate_zr(LagrangePoly, Elements),
                                          [ InterpolatedShare | Acc];
                                      true ->
                                          %% Node ${Index} has sent us a share
@@ -144,7 +144,7 @@ mnt224_test(Config) ->
                                          %% Node ${Index} has not sent us a share, interpolate it
                                          Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
                                          LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
-                                         InterpolatedShare = dkg_lagrange:apply_zr(LagrangePoly, Elements),
+                                         InterpolatedShare = dkg_lagrange:evaluate_zr(LagrangePoly, Elements),
                                          [ InterpolatedShare | Acc];
                                      true ->
                                          %% Node ${Index} has sent us a share
