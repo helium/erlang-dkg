@@ -35,7 +35,7 @@ init_test(Config) ->
     Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
 
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:init(E, N, F, T, Generator, {1, 0}),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, Generator, {1, 0})),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(1, N))),
 
@@ -94,7 +94,7 @@ mnt224_test(Config) ->
     erlang_pbc:element_pp_init(G2),
 
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:init(E, N, F, T, Generator, G2, {1, 0}),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, Generator, G2, {1, 0})),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(1, N))),
 
