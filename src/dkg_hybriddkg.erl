@@ -1,6 +1,6 @@
 -module(dkg_hybriddkg).
 
--export([init/6, init/7, start/1]).
+-export([init/7, start/1]).
 
 -export([handle_msg/3]).
 
@@ -35,21 +35,15 @@
 %%      Lnext ← L + n − 1
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
-init(Id, N, F, T, Generator, Round) ->
-    case erlang_pbc:pairing_is_symmetric(Generator) of
-        true ->
-            init(Id, N, F, T, Generator, Generator, Round);
-        false ->
-            erlang:error(pairing_not_symmetric)
-    end.
-
-init(Id, N, F, T, Generator, G2, Round) ->
+init(Id, N, F, T, G1, G2, Round) ->
+    erlang_pbc:element_pp_init(G1),
+    erlang_pbc:element_pp_init(G2),
     Session = {1, Round},
     VSSes = lists:foldl(fun(E, Map) ->
-                              VSS = dkg_hybridvss:init(Id, N, F, T, Generator, G2, {E, Round}),
+                              VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
                               maps:put(E, VSS, Map)
                       end, #{}, dkg_util:allnodes(N)),
-    #state{id=Id, n=N, f=F, t=T, u=Generator, u2=G2, session=Session, vss_map=VSSes}.
+    #state{id=Id, n=N, f=F, t=T, u=G1, u2=G2, session=Session, vss_map=VSSes}.
 
 start(State = #state{started=false, id=Id, u=Generator}) ->
     MyVSS = maps:get(Id, State#state.vss_map),

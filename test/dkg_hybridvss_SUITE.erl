@@ -32,11 +32,15 @@ init_test(Config) ->
     T = proplists:get_value(t, Config),
     Module = proplists:get_value(module, Config),
     Group = erlang_pbc:group_new('SS512'),
-    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, Generator, {1, 0}) || Id <- lists:seq(1, N) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}) || Id <- lists:seq(1, N) ],
 
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
 
     {NewDealerState, {send, MsgsToSend}} = Module:input(Dealer, Secret),
 
@@ -57,7 +61,7 @@ init_test(Config) ->
     true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
     PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
 
-    PublicKey = tpke_pubkey:init(N, F, Generator, Generator, VerificationKey, PublicKeyShares, 'SS512'),
+    PublicKey = tpke_pubkey:init(N, F, G1, G1, VerificationKey, PublicKeyShares, 'SS512'),
     PrivateKeys = [ tpke_privkey:init(PublicKey, Share, NodeID-1) || {NodeID, Share} <- maps:to_list(NodesAndShares)],
     Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
     MessageToSign = tpke_pubkey:hash_message(PublicKey, Msg),
@@ -100,13 +104,15 @@ mnt224_test(Config) ->
     T = proplists:get_value(t, Config),
     Module = proplists:get_value(module, Config),
     Group = erlang_pbc:group_new('MNT224'),
-    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
 
-    G2 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32)),
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}) || Id <- lists:seq(1, N) ],
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, Generator, G2, {1, 0}) || Id <- lists:seq(1, N) ],
-
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
 
     {NewDealerState, {send, MsgsToSend}} = Module:input(Dealer, Secret),
 
@@ -127,7 +133,7 @@ mnt224_test(Config) ->
     true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
     PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
 
-    PublicKey = tpke_pubkey:init(N, F, Generator, G2, VerificationKey, PublicKeyShares, 'MNT224'),
+    PublicKey = tpke_pubkey:init(N, F, G1, G2, VerificationKey, PublicKeyShares, 'MNT224'),
     PrivateKeys = [ tpke_privkey:init(PublicKey, Share, NodeID-1) || {NodeID, Share} <- maps:to_list(NodesAndShares)],
     Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
     MessageToSign = tpke_pubkey:hash_message(PublicKey, Msg),

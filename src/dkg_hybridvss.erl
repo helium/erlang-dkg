@@ -1,6 +1,6 @@
 -module(dkg_hybridvss).
 
--export([init/6, init/7]).
+-export([init/7]).
 
 -export([input/2, commitment/1]).
 
@@ -31,24 +31,15 @@
 
 -export_type([vss/0, session/0]).
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> vss().
-init(Id, N, F, T, Generator, Session) ->
-    case erlang_pbc:pairing_is_symmetric(Generator) of
-        true ->
-            init(Id, N, F, T, Generator, Generator, Session);
-        false ->
-            erlang:error(pairing_not_symmetric)
-    end.
-
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> vss().
-init(Id, N, F, T, Generator, G2, Session) ->
+init(Id, N, F, T, G1, G2, Session) ->
     #state{id=Id,
            n=N,
            f=F,
            t=T,
            session=Session,
            commitment=dkg_commitment:new(dkg_util:allnodes(N), G2, T),
-           u=Generator,
+           u=G1,
            u2=G2}.
 
 %% upon a message (Pd, τ, in, share, s): /* only Pd */

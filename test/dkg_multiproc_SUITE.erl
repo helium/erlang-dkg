@@ -30,8 +30,11 @@ init_test(Config) ->
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
     Group = erlang_pbc:group_new('SS512'),
-    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
-    G2 = G1,
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
 
     Workers = [ element(2, dkg_worker:start_link(Id, N, F, T, 'SS512', G1, G2, 0)) || Id <- lists:seq(1, N) ],
 
@@ -68,8 +71,12 @@ mnt224_test(Config) ->
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
     Group = erlang_pbc:group_new('MNT224'),
-    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
-    G2 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), <<"rocks">>),
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
+
 
     Workers = [ element(2, dkg_worker:start_link(Id, N, F, T, 'MNT224', G1, G2, 0)) || Id <- lists:seq(1, N) ],
 
