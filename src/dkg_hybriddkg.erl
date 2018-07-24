@@ -52,8 +52,8 @@ init(Id, N, F, T, Generator, G2, Round) ->
                                                 case dkg_hybridvss:input(VSS, Secret) of
                                                     {NewVSS, {send, ToSend}} ->
                                                         {maps:put(E, NewVSS, Map), dkg_util:wrap({vss, E, Session}, ToSend)};
-                                                    {error, Reason} ->
-                                                        {error, Reason}
+                                                    {OldVSS, ok} ->
+                                                        {OldVSS, ok}
                                                 end;
                                             false ->
                                                 {maps:put(E, VSS, Map), ToSendAcc}
@@ -90,9 +90,7 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Se
                     end;
                 false ->
                     {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
-            end;
-        {error, Reason} ->
-            {error, Reason}
+            end
     end;
 
 %% upon a message (L, τ, send, Q, R/M) from L (first time):

@@ -18,7 +18,7 @@
 
 -export_type([matrix/0, serialized_matrix/0]).
 
--spec new(erlang_pbc:element(), integer() | erlang_pbc:element()) -> matrix().
+-spec new(erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> matrix().
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
     One = erlang_pbc:element_set(Generator, 1),

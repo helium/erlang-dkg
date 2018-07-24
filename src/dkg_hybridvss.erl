@@ -29,7 +29,7 @@
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 
--export_type([vss/0]).
+-export_type([vss/0, session/0]).
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), session()) -> vss().
 init(Id, N, F, T, Generator, Session) ->
@@ -56,7 +56,7 @@ init(Id, N, F, T, Generator, G2, Session) ->
 %%     C ←{Cjl } t j,l=0 where Cjl = gφ^jl for j,l ∈[0,t]
 %%     for all j ∈ [1,n] do
 %%         aj(y) ← φ(j,y); send the message (Pd, τ, send, C, aj) to Pj
--spec input(State :: vss(), Secret :: erlang_pbc:element()) -> {vss(), {send, [send_msg()]}} | {error, not_dealer}.
+-spec input(State :: vss(), Secret :: erlang_pbc:element()) -> {vss(), {send, [send_msg()]} | ok}.
 input(State = #state{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U2, T, Secret),
     Commitment = dkg_commitment:new(dkg_util:allnodes(N), U2, BiPoly),
@@ -68,18 +68,14 @@ input(State = #state{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, S
                      end, dkg_util:allnodes(N)),
     NewState = State#state{commitment=Commitment, received_commitment=true},
     {NewState, {send, Msgs}};
-input(_State, _Secret) ->
-    {error, not_dealer}.
+input(State, _Secret) ->
+    {State, ok}.
 
 %% upon a message (Pd, τ, send, C, a) from Pd (first time):
 %%     if verify-poly(C, i, a) then
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
--spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), [echo_msg()] | [ready_msg()]} |
-                                                                                 {error, bad_commitment} |
-                                                                                 {vss(), {error, already_received_commitment}} |
-                                                                                 {vss(), ok} |
-                                                                                 {vss(), result()}.
+-spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | result()}.
 handle_msg(State=#state{n=N, u=U, id=Id, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, SerializedCommitmentMatrix0, A}}) ->
     CommitmentMatrix0 = dkg_commitmentmatrix:deserialize(SerializedCommitmentMatrix0, U),
     case dkg_commitmentmatrix:verify_poly(State#state.u2, CommitmentMatrix0, Id, A) of
@@ -91,11 +87,11 @@ handle_msg(State=#state{n=N, u=U, id=Id, session=Session, sent_echo=false}, Send
                              end, dkg_util:allnodes(N)),
             {State#state{sent_echo=true, commitment=Commitment, received_commitment=true}, {send, Msgs}};
         false ->
-            {error, bad_commitment}
+            {State, ok}
     end;
 handle_msg(State, _Sender, {send, {_Session, _Commitment, _A}}) ->
     %% already received a commitment, or it's not from the dealer; ignore this one
-    {State, {error, already_received_commitment}};
+    {State, ok};
 
 %% upon a message (Pd, τ, echo, C, α) from Pm (first time):
 %%     if verify-point(C, i, m, α) then
