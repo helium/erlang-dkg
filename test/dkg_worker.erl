@@ -37,7 +37,14 @@ dec_share(Pid, Share) ->
 start_link(Id, N, F, T, Curve, G1, G2, Round) ->
     gen_server:start_link({global, name(Id)}, ?MODULE, [Id, N, F, T, Curve, G1, G2, Round], []).
 
-init([Id, N, F, T, Curve, G1, G2, Round]) ->
+init([Id, N, F, T, Curve, G10, G20, Round]) ->
+    {G1, G2} = case is_binary(G10) andalso is_binary(G20) of
+                   true ->
+                       Group = erlang_pbc:group_new(Curve),
+                       {erlang_pbc:binary_to_element(Group, G10), erlang_pbc:binary_to_element(Group, G20)};
+                   false ->
+                       {G10, G20}
+               end,
     DKG = dkg_hybriddkg:init(Id, N, F, T, G1, G2, Round),
     {ok, #state{n=N, f=F, t=T, id=Id, curve=Curve, g1=G1, g2=G2, round=Round, dkg=DKG}}.
 

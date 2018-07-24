@@ -54,7 +54,7 @@ input(State = #state{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, S
 
     Msgs = lists:map(fun(Node) ->
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                             Aj = dkg_bipolynomial:evaluate(BiPoly, NodeZr),
+                             Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
                              {unicast, Node, {send, {Session, dkg_commitmentmatrix:serialize(dkg_commitment:matrix(Commitment)), Aj}}}
                      end, dkg_util:allnodes(N)),
     NewState = State#state{commitment=Commitment, received_commitment=true},
@@ -67,7 +67,8 @@ input(State, _Secret) ->
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
 -spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | result()}.
-handle_msg(State=#state{n=N, u=U, id=Id, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, SerializedCommitmentMatrix0, A}}) ->
+handle_msg(State=#state{n=N, u=U, id=Id, session=Session, sent_echo=false}, Sender, {send, {Session = {Sender, _}, SerializedCommitmentMatrix0, SA}}) ->
+    A = dkg_polynomial:deserialize(SA, State#state.u),
     CommitmentMatrix0 = dkg_commitmentmatrix:deserialize(SerializedCommitmentMatrix0, U),
     case dkg_commitmentmatrix:verify_poly(State#state.u2, CommitmentMatrix0, Id, A) of
         true ->

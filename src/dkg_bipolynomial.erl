@@ -9,7 +9,9 @@
          print/1,
          cmp/2,
          is_zero/1,
-         lookup/2]).
+         lookup/2,
+         serialize/1,
+         deserialize/2]).
 
 -type row() :: {erlang_pbc:element(), erlang_pbc:element(), erlang_pbc:element()}.
 -type bipolynomial() :: {row(), row(), row()}.
@@ -143,3 +145,15 @@ lookup([Row, Col], Poly) ->
 
 insert([Row, Col], Poly, Val) ->
     setelement(Row, Poly, setelement(Col, element(Row, Poly), Val)).
+
+serialize(BiPoly) ->
+    Degree = degree(BiPoly),
+    lists:foldl(fun({Row, Col}, Acc) ->
+                        insert([Row, Col], Acc, erlang_pbc:element_to_binary(lookup([Row, Col], Acc)))
+                end, BiPoly, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]).
+
+deserialize(BiPoly, Element) ->
+    Degree = degree(BiPoly),
+    lists:foldl(fun({Row, Col}, Acc) ->
+                        insert([Row, Col], Acc, erlang_pbc:binary_to_element(Element, lookup([Row, Col], Acc)))
+                end, BiPoly, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]).
