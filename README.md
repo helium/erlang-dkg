@@ -1,5 +1,7 @@
 erlang-dkg
 =====
+[![Build Status](https://travis-ci.org/helium/erlang-dkg.svg?branch=master)](https://travis-ci.org/helium/erlang-dkg)
+
 Distributed key generation for Erlang (using pairing based cryptography)
 
 Build
