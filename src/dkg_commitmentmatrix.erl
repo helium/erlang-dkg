@@ -16,7 +16,7 @@
 -type serialized_row() :: {binary(), binary(), binary()}.
 -type serialized_matrix() :: {serialized_row(), serialized_row(), serialized_row()}.
 
--export_type([matrix/0]).
+-export_type([matrix/0, serialized_matrix/0]).
 
 -spec new(erlang_pbc:element(), integer() | erlang_pbc:element()) -> matrix().
 new(Generator, T) when is_integer(T) ->
