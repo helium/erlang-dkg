@@ -62,12 +62,12 @@ init(Id, N, F, T, Generator, G2, Round) ->
     {#state{id=Id, n=N, f=F, t=T, u=Generator, u2=G2, session=Session, vss_map=VSSes}, {send, Msgs}}.
 
 %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
-%% Qhat ← {Pd}; Rhat ← {Rd}
-%% if |Qhat| = t + 1 and Qbar = ∅ then
-%%      if Pi = L then
-%%          send the message (L, τ, send, Qhat, Rhat) to each Pj
-%%       else
-%%          delay ← delay(T); start timer(delay)
+%%      Qhat ← {Pd}; Rhat ← {Rd}
+%%      if |Qhat| = t + 1 and Qbar = ∅ then
+%%           if Pi = L then
+%%               send the message (L, τ, send, Qhat, Rhat) to each Pj
+%%            else
+%%               delay ← delay(T); start timer(delay)
 handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VssID, State#state.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
@@ -170,7 +170,7 @@ handle_msg(State, _Sender, Msg) ->
     {State, {unhandled_msg, Msg}}.
 
 %% helper functions
--spec output_commitment(#state{}, qhat()) -> dkg_commitment:commitment().
+-spec output_commitment(#state{}, [non_neg_integer()]) -> dkg_commitment:commitment().
 output_commitment(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstCommitment | RemainingCommitments] = lists:foldl(fun(VSSId, Acc) ->
                                                                    {Commitment, _} = maps:get(VSSId, VSSDoneThisRound),
@@ -188,7 +188,7 @@ public_key_shares(_State=#state{n=N}, OutputCommitment) ->
 verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
--spec shard(#state{}, qhat()) -> erlang_pbc:element().
+-spec shard(#state{}, [non_neg_integer()]) -> erlang_pbc:element().
 shard(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
     [FirstShare | RemainingShares] = lists:foldl(fun(VSSId, Acc) ->
                                                          {_, Share} = maps:get(VSSId, VSSDoneThisRound),
