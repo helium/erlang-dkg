@@ -1,6 +1,6 @@
 -module(dkg_hybriddkg).
 
--export([init/6, init/7]).
+-export([init/7, start/1]).
 
 -export([handle_msg/3]).
 
@@ -23,7 +23,8 @@
           vss_done_this_round = #{} :: qhat(),
           vss_done_last_round = #{} :: qbar(),
           leader = 1 :: pos_integer(),
-          session :: session()
+          session :: session(),
+          started = false :: boolean()
          }).
 
 %% upon initialization:
@@ -34,32 +35,21 @@
 %%      Lnext ← L + n − 1
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
-init(Id, N, F, T, Generator, Round) ->
-    case erlang_pbc:pairing_is_symmetric(Generator) of
-        true ->
-            init(Id, N, F, T, Generator, Generator, Round);
-        false ->
-            erlang:error(pairing_not_symmetric)
-    end.
-
-init(Id, N, F, T, Generator, G2, Round) ->
+init(Id, N, F, T, G1, G2, Round) ->
+    erlang_pbc:element_pp_init(G1),
+    erlang_pbc:element_pp_init(G2),
     Session = {1, Round},
-    {VSSes, Msgs} = lists:foldl(fun(E, {Map, ToSendAcc}) ->
-                                        VSS = dkg_hybridvss:init(Id, N, F, T, Generator, G2, {E, Round}),
-                                        case E == Id of
-                                            true ->
-                                                Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
-                                                case dkg_hybridvss:input(VSS, Secret) of
-                                                    {NewVSS, {send, ToSend}} ->
-                                                        {maps:put(E, NewVSS, Map), dkg_util:wrap({vss, E, Session}, ToSend)};
-                                                    {OldVSS, ok} ->
-                                                        {OldVSS, ok}
-                                                end;
-                                            false ->
-                                                {maps:put(E, VSS, Map), ToSendAcc}
-                                        end
-                                end, {#{}, []}, dkg_util:allnodes(N)),
-    {#state{id=Id, n=N, f=F, t=T, u=Generator, u2=G2, session=Session, vss_map=VSSes}, {send, Msgs}}.
+    VSSes = lists:foldl(fun(E, Map) ->
+                              VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
+                              maps:put(E, VSS, Map)
+                      end, #{}, dkg_util:allnodes(N)),
+    #state{id=Id, n=N, f=F, t=T, u=G1, u2=G2, session=Session, vss_map=VSSes}.
+
+start(State = #state{started=false, id=Id, u=Generator}) ->
+    MyVSS = maps:get(Id, State#state.vss_map),
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+    {NewVSS, {send, ToSend}} = dkg_hybridvss:input(MyVSS, Secret),
+    {State#state{vss_map=maps:put(Id, NewVSS, State#state.vss_map), started=true}, {send, dkg_util:wrap({vss, Id, State#state.session}, ToSend)}}.
 
 %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
 %%      Qhat ← {Pd}; Rhat ← {Rd}

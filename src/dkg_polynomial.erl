@@ -12,7 +12,9 @@
          degree/1,
          is_zero/1,
          is_equal/2,
-         print/1]).
+         print/1,
+         serialize/1,
+         deserialize/2]).
 
 -type polynomial() :: [erlang_pbc:element()].
 -export_type([polynomial/0]).
@@ -111,3 +113,8 @@ merge(PolyA, PolyB, MergeFun) ->
     %% remove any trailing 0s
     lists:reverse(lists:dropwhile(fun erlang_pbc:element_is0/1, lists:reverse(MergedPoly))).
 
+serialize(Poly) ->
+    lists:map(fun erlang_pbc:element_to_binary/1, Poly).
+
+deserialize(Poly, Element) ->
+    lists:map(fun(E) -> erlang_pbc:binary_to_element(Element, E) end, Poly).

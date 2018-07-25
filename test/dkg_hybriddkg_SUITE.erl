@@ -17,8 +17,8 @@ all() ->
 
 init_per_testcase(_, Config) ->
     N = list_to_integer(os:getenv("N", "10")),
-    F = (N - 1) div 3,
-    T = F,
+    F = 3,
+    T = 1,
     Ph = 0,
     Module = dkg_hybriddkg,
     [{n, N}, {f, F}, {module, Module}, {t, T}, {ph, Ph} | Config].
@@ -32,10 +32,14 @@ init_test(Config) ->
     T = proplists:get_value(t, Config),
     Module = proplists:get_value(module, Config),
     Group = erlang_pbc:group_new('SS512'),
-    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
 
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:init(E, N, F, T, Generator, {1, 0}),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0})),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(1, N))),
 
@@ -51,15 +55,15 @@ init_test(Config) ->
     ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
     PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
     KnownSecret = dkg_polynomial:evaluate(PublicKeySharePoly, 0),
-    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), I) || I <- lists:seq(1, N) ],
-    Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), 0),
+    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), I) || I <- lists:seq(1, N) ],
+    Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), 0),
     CalculatedSecret = dkg_lagrange:interpolate(PublicKeySharePoly, Indices, Alpha),
     ?assert(erlang_pbc:element_cmp(KnownSecret, CalculatedSecret)),
 
     %% attempt to construct some TPKE keys...
 
     PrivateKeys = lists:map(fun({result, {Node, {SK, VK, VKs}}}) ->
-                                    PK = tpke_pubkey:init(N, F, Generator, Generator, VK, VKs, 'SS512'),
+                                    PK = tpke_pubkey:init(N, F, G1, G2, VK, VKs, 'SS512'),
                                     tpke_privkey:init(PK, SK, Node-1)
                             end, sets:to_list(ConvergedResults)),
     PubKey = tpke_privkey:public_key(hd(PrivateKeys)),
@@ -88,13 +92,14 @@ mnt224_test(Config) ->
     T = proplists:get_value(t, Config),
     Module = proplists:get_value(module, Config),
     Group = erlang_pbc:group_new('MNT224'),
-    Generator = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), <<"honeybadger">>),
-    G2 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32)),
-    erlang_pbc:element_pp_init(Generator),
-    erlang_pbc:element_pp_init(G2),
+    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
+    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
+             true -> G1;
+             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
+         end,
 
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:init(E, N, F, T, Generator, G2, {1, 0}),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0})),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(1, N))),
 
@@ -110,15 +115,15 @@ mnt224_test(Config) ->
     ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
     PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
     KnownSecret = dkg_polynomial:evaluate(PublicKeySharePoly, 0),
-    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), I) || I <- lists:seq(1, N) ],
-    Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Generator), 0),
+    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), I) || I <- lists:seq(1, N) ],
+    Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), 0),
     CalculatedSecret = dkg_lagrange:interpolate(PublicKeySharePoly, Indices, Alpha),
     ?assert(erlang_pbc:element_cmp(KnownSecret, CalculatedSecret)),
 
     %% attempt to construct some TPKE keys...
 
     PrivateKeys = lists:map(fun({result, {Node, {SK, VK, VKs}}}) ->
-                                    PK = tpke_pubkey:init(N, F, Generator, G2, VK, VKs, 'MNT224'),
+                                    PK = tpke_pubkey:init(N, F, G1, G2, VK, VKs, 'MNT224'),
                                     tpke_privkey:init(PK, SK, Node-1)
                             end, sets:to_list(ConvergedResults)),
     PubKey = tpke_privkey:public_key(hd(PrivateKeys)),

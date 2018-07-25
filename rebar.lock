@@ -1,4 +1,4 @@
 [{<<"erlang_pbc">>,
   {git,"https://github.com/helium/erlang_pbc.git",
-       {ref,"1eac9fae947ba8d1022f4b13bcaf3500a99f5dc5"}},
+       {ref,"9eec064dd89d554b3e1eaee3ccc121e63dd1e167"}},
   0}].
