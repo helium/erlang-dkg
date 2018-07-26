@@ -27,6 +27,7 @@ new(Generator, T) when is_integer(T) ->
                               end, [], lists:seq(0, T)));
 new(Generator, BiPoly) when is_tuple(BiPoly) ->
     T = dkg_bipolynomial:degree(BiPoly),
+    erlang_pbc:element_pp_init(Generator),
     list_to_tuple([ list_to_tuple([ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ])  || I <- lists:seq(0, T) ]).
 
 lookup([Row, Col], Poly) ->
@@ -74,6 +75,7 @@ verify_point(U, Matrix, SenderID, VerifierID, Point) ->
     M = erlang_pbc:element_set(Point, SenderID),
     I = erlang_pbc:element_set(Point, VerifierID),
     G1 = erlang_pbc:element_set(U, 1),
+    erlang_pbc:element_pp_init(G1),
 
     Ga = erlang_pbc:element_pow(U, Point),
     Res = lists:foldl(fun(II, Acc) ->
@@ -91,6 +93,7 @@ public_key_share(U, Matrix, NodeID) ->
     M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), NodeID),
     I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
     G1 = erlang_pbc:element_set(U, 1),
+    erlang_pbc:element_pp_init(G1),
 
     %% return the public key share
     %% NOTE: C++ traverses the matrix in reverse, following the same
