@@ -17,8 +17,8 @@ all() ->
 
 init_per_testcase(_, Config) ->
     N = list_to_integer(os:getenv("N", "10")),
-    F = 3,
-    T = 1,
+    F = 0,
+    T = 3,
     Ph = 0,
     Module = dkg_hybriddkg,
     [{n, N}, {f, F}, {module, Module}, {t, T}, {ph, Ph} | Config].

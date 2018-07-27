@@ -5,7 +5,6 @@
 -export([handle_msg/3]).
 
 -type session() :: {Leader :: pos_integer(), Round :: pos_integer()}.
--type qhat() :: #{{D :: pos_integer(), Session :: session()} => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element(), SignedReadyMsgs :: any()}}.
 -type qbar() :: #{{D :: pos_integer(), Session :: session()} => #{signed_ready => any(), signed_echo => any(), signed_leader_change => any()}}.
 
 -record(dkg, {
@@ -17,7 +16,8 @@
           u :: erlang_pbc:element(),
           u2 :: erlang_pbc:element(),
           vss_map :: #{pos_integer() => dkg_hybridvss:vss()},
-          qhat = #{} :: qhat(),
+          vss_results = #{} :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}},
+          qhat = #{} :: #{pos_integer() => [any()]},
           qbar = #{} :: qbar(),
           session :: session(),
           lc_flag = false :: boolean(),
@@ -67,13 +67,13 @@ start(DKG = #dkg{id=Id, u=G1}) ->
 %%               send the message (L, τ, send, Qhat, Rhat) to each Pj
 %%            else
 %%               delay ← delay(T); start timer(delay)
-handle_msg(DKG = #dkg{id=Id, session=Session={Leader, _}}, Sender, {{vss, VSSId, Session}, VssMSG}) ->
+handle_msg(DKG = #dkg{session=Session={Leader, _}}, Sender, {{vss, VSSId, Session}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map), state=agreement_started}, ok};
         {NewVSS, {send, ToSend}} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map), state=agreement_started}, {send, dkg_util:wrap({vss, VSSId, Session}, ToSend)}};
-        {NewVSS, {result, {_Session, _Commitment, _Si, _Rd}}=Res} ->
+        {NewVSS, {result, {_Session, Commitment, Si, _Rd}}=Res} ->
             %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
             %%      Qhat ← {Pd}; Rhat ← {Rd}
             %%      if |Qhat| = t + 1 and Qbar = ∅ then
@@ -82,22 +82,20 @@ handle_msg(DKG = #dkg{id=Id, session=Session={Leader, _}}, Sender, {{vss, VSSId,
             %%            else
             %%               delay ← delay(T); start timer(delay)
             %% TODO 'extended' VSS should output signed ready messages
-            case update_qhat(DKG, VSSId, Res) of
+            NewDKG0 = DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map), vss_results=maps:put(VSSId, {Commitment, Si}, DKG#dkg.vss_results)},
+            case update_qhat(NewDKG0, VSSId, Res) of
                 false ->
-                    {DKG, ok};
+                    {NewDKG0, ok};
                 {true, NewDKG} ->
-                    %% ct:pal("DKG: ~p, VSS: ~p, update_qhat", [Id, VSSId]),
-                    ct:pal("DKG: ~p, VSS: ~p, count_ready: ~p", [Id, VSSId, count_ready(NewDKG)]),
                     case count_vss_ready(NewDKG) == NewDKG#dkg.t + 1 andalso maps:size(NewDKG#dkg.qbar) == 0 of
                         true ->
-                            ct:pal("DKG: ~p, VSS: ~p, count_ready: ~p", [Id, VSSId, count_ready(NewDKG)]),
                             case NewDKG#dkg.id == Leader of
                                 true ->
                                     %% send, send message
-                                    {NewDKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, [{multicast, {send, Session, maps:keys(NewDKG#dkg.qhat)}}]}};
+                                    {NewDKG, {send, [{multicast, {send, Session, NewDKG#dkg.qhat}}]}};
                                 false ->
                                     %% start timer
-                                    {NewDKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, start_timer}
+                                    {NewDKG, start_timer}
                             end;
                         false ->
                             {NewDKG, ok}
@@ -117,7 +115,7 @@ handle_msg(DKG = #dkg{session=Session={Leader, _}}, Sender, {send, Session, VSSD
             {DKG, ok}
     end;
 handle_msg(DKG, Sender, {send, _Session, _VSSDone}) ->
-    ct:pal("~p got message for different leader ~p", [DKG#dkg.id, Sender]),
+    ct:pal("~p got message for different leader ~p /= ~p", [DKG#dkg.id, Sender, DKG#dkg.leader]),
     {DKG, ok};
 
 
@@ -277,15 +275,16 @@ handle_msg(DKG=#dkg{leader=Leader, n=N, t=T, f=F, qbar=Qbar, l_next=LNext}, Send
                             MBar = maps:get(Lbar, DKG#dkg.leader_change),
                             case DKG#dkg.id == Lbar of
                                 true ->
+                                    ct:pal("I'm the leader now dawg ~p", [DKG#dkg.id]),
                                     Msg = case maps:size(NewDKG#dkg.qbar) == 0 of
                                               true ->
                                                   {send, [{multicast, {send, {NewLNext, Round}, NewDKG#dkg.qhat}}]};
                                               false ->
                                                   {send, [{multicast, {send, {NewLNext, Round}, MBar}}]}
                                           end,
-                                    {NewDKG#dkg{leader=Lbar, lc_flag=false}, Msg};
+                                    {NewDKG#dkg{leader=Lbar, lc_flag=false, session={Lbar, element(2, DKG#dkg.session)}}, Msg};
                                 false ->
-                                    {NewDKG#dkg{leader=Lbar, lc_flag=false}, start_timer}
+                                    {NewDKG#dkg{leader=Lbar, lc_flag=false,  session={Lbar, element(2, DKG#dkg.session)}}, start_timer}
                             end;
                         false ->
                             {NewDKG, ok}
@@ -301,10 +300,10 @@ handle_msg(DKG, _Sender, Msg) ->
 
 %% helper functions
 -spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
-output_commitment(_DKG=#dkg{qhat=Qhat, u2=U2, t=T, n=N}) ->
-    maps:fold(fun(_K, {Commitment, _, _}, Acc) ->
+output_commitment(_DKG=#dkg{vss_results=R, u2=U2, t=T, n=N}) ->
+    maps:fold(fun(_K, {Commitment, _}, Acc) ->
                       dkg_commitment:mul(Commitment, Acc)
-              end, dkg_commitment:new(lists:seq(1, N), U2, T), Qhat).
+              end, dkg_commitment:new(lists:seq(1, N), U2, T), R).
 
 -spec public_key_shares(#dkg{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
 public_key_shares(_DKG=#dkg{n=N}, OutputCommitment) ->
@@ -315,11 +314,11 @@ verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
 -spec shard(#dkg{}) -> erlang_pbc:element().
-shard(_DKG=#dkg{qhat=Qhat, u=U}) ->
+shard(_DKG=#dkg{vss_results=R, u=U}) ->
     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
-    maps:fold(fun(_K, {_, Si, _}, Acc) ->
+    maps:fold(fun(_K, {_, Si}, Acc) ->
                         erlang_pbc:element_add(Acc, Si)
-              end, Zero, Qhat).
+              end, Zero, R).
 
 store_echo(DKG, Sender, EchoMsg) ->
     store_msg(DKG, Sender, {signed_echo, EchoMsg}).
@@ -367,13 +366,13 @@ get_msg(DKG=#dkg{session=Session0}, MsgType) ->
 leader_change_count(DKG, L) ->
     length(maps:get(L, DKG#dkg.leader_change, [])).
 
-update_qhat(DKG=#dkg{id=_Id, qhat=Qhat}, VSSId, {result, {Session, Commitment, Si, Rd}}) ->
+update_qhat(DKG=#dkg{id=_Id, qhat=Qhat}, VSSId, {result, {Session, _Commitment, _Si, Rd}}) ->
     %% ct:pal("DKG: ~p, VSS: ~p, update_qhat", [Id, VSSId]),
     case maps:is_key({VSSId, Session}, Qhat) of
         true ->
             false;
         false ->
-            NewQhat = maps:put({VSSId, Session}, {Commitment, Si, Rd}, Qhat),
+            NewQhat = maps:put({VSSId, Session}, Rd, Qhat),
             {true, DKG#dkg{qhat=NewQhat}}
     end.
 
