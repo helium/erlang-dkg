@@ -41,7 +41,7 @@ init_test(Config) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
                                                    {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0})),
                                                    {{E, State}, {E, {send, Replies}}}
-                                           end, lists:seq(1, N))),
+                                           end, lists:seq(2, N))),
 
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, Replies, StatesWithId, sets:new()),
     ct:pal("Results ~p", [sets:to_list(ConvergedResults)]),
