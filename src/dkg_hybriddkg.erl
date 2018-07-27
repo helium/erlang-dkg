@@ -93,7 +93,7 @@ handle_msg(DKG = #dkg{id=Id, session=Session={Leader, _}}, Sender, {{vss, VSSId,
                 {true, NewDKG} ->
                     %% ct:pal("DKG: ~p, VSS: ~p, update_qhat", [Id, VSSId]),
                     ct:pal("DKG: ~p, VSS: ~p, count_ready: ~p", [Id, VSSId, count_ready(NewDKG)]),
-                    case count_ready(NewDKG) == NewDKG#dkg.t + 1 andalso maps:size(NewDKG#dkg.qbar) == 0 of
+                    case count_vss_ready(NewDKG) == NewDKG#dkg.t + 1 andalso maps:size(NewDKG#dkg.qbar) == 0 of
                         true ->
                             ct:pal("DKG: ~p, VSS: ~p, count_ready: ~p", [Id, VSSId, count_ready(NewDKG)]),
                             case NewDKG#dkg.id == Leader of
@@ -102,7 +102,7 @@ handle_msg(DKG = #dkg{id=Id, session=Session={Leader, _}}, Sender, {{vss, VSSId,
                                     {NewDKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, [{multicast, {send, Session, maps:keys(NewDKG#dkg.qhat)}}]}};
                                 false ->
                                     %% start timer
-                                    {NewDKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, start_timer}
+                                    {NewDKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok} %start_timer}
                             end;
                         false ->
                             {NewDKG, ok}
@@ -257,10 +257,10 @@ handle_msg(DKG, _Sender, Msg) ->
 
 %% helper functions
 -spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
-output_commitment(_DKG=#dkg{qhat=Qhat, u=U, t=T, n=N}) ->
+output_commitment(_DKG=#dkg{qhat=Qhat, u2=U2, t=T, n=N}) ->
     maps:fold(fun(_K, {Commitment, _, _}, Acc) ->
                       dkg_commitment:mul(Commitment, Acc)
-              end, dkg_commitment:new(lists:seq(1, N), U, T), Qhat).
+              end, dkg_commitment:new(lists:seq(1, N), U2, T), Qhat).
 
 -spec public_key_shares(#dkg{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
 public_key_shares(_DKG=#dkg{n=N}, OutputCommitment) ->
@@ -324,3 +324,7 @@ update_qhat(DKG=#dkg{id=_Id, qhat=Qhat}, VSSId, {result, {Session, Commitment, S
             NewQhat = maps:put({VSSId, Session}, {Commitment, Si, Rd}, Qhat),
             {true, DKG#dkg{qhat=NewQhat}}
     end.
+
+count_vss_ready(DKG) ->
+    maps:size(DKG#dkg.qhat).
+
