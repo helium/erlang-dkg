@@ -50,7 +50,7 @@ init(Id, N, F, T, G1, G2, Round) ->
          u=G1,
          u2=G2,
          leader=1,
-         l_next=N,
+         l_next=l_next(1, N),
          session=Session,
          vss_map=VSSes}.
 
@@ -236,8 +236,7 @@ handle_msg(DKG, _Sender, timeout) ->
 %%              delay ← delay(T )
 %%              start timer(delay)
 
-handle_msg(DKG=#dkg{leader=Leader, n=N, t=T, f=F, qbar=Qbar, l_next=LNext}, Sender, {leader_change, {Lbar, Round}, Checkpoint}=LeaderChangeMsg) when Lbar > Leader ->
-    NewLNext = min(LNext, Lbar),
+handle_msg(DKG=#dkg{leader=Leader, n=N, t=T, f=F, qbar=Qbar}, Sender, {leader_change, {Lbar, Round}, Checkpoint}=LeaderChangeMsg) when Lbar > Leader ->
     %% XXX is the leader change message unique by sender or by the Q,R/M attachment, or both?
     %% TODO we need to verify these messages are signed
     case store_leader_change(DKG, Sender, LeaderChangeMsg) of
@@ -262,29 +261,36 @@ handle_msg(DKG=#dkg{leader=Leader, n=N, t=T, f=F, qbar=Qbar, l_next=LNext}, Send
                      end,
             case count_leader_change(NewDKG) == T+F+1 andalso not DKG#dkg.lc_flag of
                 true ->
+                    NewLNext = min(DKG#dkg.l_next, Lbar),
+                    ct:pal("Lnext is ~p", [NewLNext]),
                     Msg = case maps:size(NewDKG#dkg.qbar) == 0 of
                               true ->
                                   {send, [{multicast, {leader_change, {NewLNext, Round}, {signed_vss_ready, NewDKG#dkg.qhat}}}]};
                               false ->
+                                  %% XXX MBar should have some relationship to the kind of message we got?
                                   {send, [{multicast, {leader_change, {NewLNext, Round}, {qbar, Qbar}}}]}
                           end,
-                    {NewDKG, Msg};
+                    {NewDKG#dkg{l_next=NewLNext}, Msg};
                 false ->
                     case leader_change_count(NewDKG, Lbar) == N - T - F of
                         true ->
                             MBar = maps:get(Lbar, DKG#dkg.leader_change),
+                            NewLeaderChangeMap = maps:remove(Leader, DKG#dkg.leader_change),
+                            NewLNext = Lbar + 1, %l_next(Lbar, DKG#dkg.n),
+                            ct:pal("Lnext is ~p", [NewLNext]),
                             case DKG#dkg.id == Lbar of
                                 true ->
                                     ct:pal("I'm the leader now dawg ~p", [DKG#dkg.id]),
                                     Msg = case maps:size(NewDKG#dkg.qbar) == 0 of
                                               true ->
-                                                  {send, [{multicast, {send, {NewLNext, Round}, NewDKG#dkg.qhat}}]};
+                                                  {send, [{multicast, {send, {Lbar, Round}, {signed_vss_ready, NewDKG#dkg.qhat}}}]};
                                               false ->
-                                                  {send, [{multicast, {send, {NewLNext, Round}, MBar}}]}
+                                                  {send, [{multicast, {send, {Lbar, Round}, {signed_leader_change, MBar}}}]}
                                           end,
-                                    {NewDKG#dkg{leader=Lbar, lc_flag=false, session={Lbar, element(2, DKG#dkg.session)}}, Msg};
+                                    {NewDKG#dkg{leader=Lbar, l_next=NewLNext, lc_flag=false, session={Lbar, element(2, DKG#dkg.session)}, leader_change=NewLeaderChangeMap}, Msg};
                                 false ->
-                                    {NewDKG#dkg{leader=Lbar, lc_flag=false,  session={Lbar, element(2, DKG#dkg.session)}}, start_timer}
+                                    ct:pal("starting new timer"),
+                                    {NewDKG#dkg{leader=Lbar, l_next=NewLNext, lc_flag=false,  session={Lbar, element(2, DKG#dkg.session)}, leader_change=NewLeaderChangeMap}, start_timer}
                             end;
                         false ->
                             {NewDKG, ok}
@@ -379,3 +385,10 @@ update_qhat(DKG=#dkg{id=_Id, qhat=Qhat}, VSSId, {result, {Session, _Commitment, 
 count_vss_ready(DKG) ->
     maps:size(DKG#dkg.qhat).
 
+l_next(L, N) ->
+    case L - 1 < 1 of
+        true ->
+            N;
+        false ->
+            L - 1
+    end.
