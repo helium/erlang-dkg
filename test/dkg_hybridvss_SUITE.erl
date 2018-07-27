@@ -49,11 +49,11 @@ init_test(Config) ->
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
 
     %% check that the shares from nodes can be interpolated to calculate the original secret back
-    NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share}}}, Acc) ->
+    NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share, _Rd}}}, Acc) ->
                                         maps:put(Node, Share, Acc)
                                 end, #{}, sets:to_list(ConvergedResults)),
 
-    AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share}}} <- sets:to_list(ConvergedResults)],
+    AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share, _Rd}}} <- sets:to_list(ConvergedResults)],
     OutputCommitment = hd(AllCommitments),
 
     %[VerificationKey | PublicKeyShares] = dkg_commitment:interpolate(OutputCommitment, ready, lists:seq(1, N)),
@@ -121,11 +121,11 @@ mnt224_test(Config) ->
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
 
     %% check that the shares from nodes can be interpolated to calculate the original secret back
-    NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share}}}, Acc) ->
+    NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share, _Rd}}}, Acc) ->
                                         maps:put(Node, Share, Acc)
                                 end, #{}, sets:to_list(ConvergedResults)),
 
-    AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share}}} <- sets:to_list(ConvergedResults)],
+    AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share, _Rd}}} <- sets:to_list(ConvergedResults)],
     OutputCommitment = hd(AllCommitments),
 
     %[VerificationKey | PublicKeyShares] = dkg_commitment:interpolate(OutputCommitment, ready, lists:seq(1, N)),

@@ -27,7 +27,7 @@
 -type send_msg() :: {unicast, pos_integer(), {send, {session(), dkg_commitmentmatrix:serialized_matrix(), dkg_polynomial:polynomial()}}}.
 -type echo_msg() :: {unicast, pos_integer(), {echo, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
--type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
+-type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()], map()}}.
 
 -export_type([vss/0, session/0]).
 
@@ -132,7 +132,7 @@ handle_msg(State=#state{echoes=Echoes, id=Id, n=N, t=T, session=Session}, Sender
 %%                 send the message (Pd, τ, ready, C, a(j)) to Pj
 %%     else if rC = n − t − f then
 %%         si ← a(0); output (Pd , τ, out, shared, C, si )
-handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, SerializedCommitmentMatrix0, SA}}) ->
+handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, SerializedCommitmentMatrix0, SA}}=ReadyMsg) ->
     CommitmentMatrix0 = dkg_commitmentmatrix:deserialize(SerializedCommitmentMatrix0, State#state.u),
     A = erlang_pbc:binary_to_element(State#state.u, SA),
     case dkg_commitmentmatrix:verify_point(State#state.u2, CommitmentMatrix0, Sender, Id, A) of
@@ -150,16 +150,16 @@ handle_msg(State=#state{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commit
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares))}}}
                                              end, dkg_util:allnodes(N)),
-                            NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment, received_commitment=true},
+                            NewState = State#state{readies=maps:put(Sender, ReadyMsg, Readies), commitment=NewCommitment, received_commitment=true},
                             {NewState, {send, Msgs}};
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment, received_commitment=true},
-                                    {NewState, {result, {Session, Commitment, SubShare}}};
+                                    NewState = State#state{readies=maps:put(Sender, ReadyMsg, Readies), commitment=NewCommitment, received_commitment=true},
+                                    {NewState, {result, {Session, Commitment, SubShare, NewState#state.readies}}};
                                 false ->
-                                    NewState = State#state{readies=maps:put(Sender, true, Readies), commitment=NewCommitment, received_commitment=true},
+                                    NewState = State#state{readies=maps:put(Sender, ReadyMsg, Readies), commitment=NewCommitment, received_commitment=true},
                                     {NewState, ok}
                             end
                     end;
