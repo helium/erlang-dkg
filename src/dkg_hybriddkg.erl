@@ -124,7 +124,7 @@ handle_msg(DKG, Sender, {send, _Session, _VSSDone}) ->
 %%      if e(L,Q) = ceil((n+t+1)/2) and r(L,Q) < t + 1 then
 %%          Qbar ← Q; Mbar ← ceil((n+t+1)/2) signed echo messages for Q
 %%          send the message (L, τ, ready, Q)sign to each Pj
-handle_msg(DKG = #dkg{session=Session, n=N, t=T}, Sender, {echo, Session, VSSDone}=EchoMsg) ->
+handle_msg(DKG = #dkg{id=Id, session=Session, n=N, t=T}, Sender, {echo, Session, VSSDone}=EchoMsg) when Sender /= Id ->
     case store_echo(DKG, Sender, EchoMsg) of
         false ->
             {DKG, ok};
@@ -137,6 +137,8 @@ handle_msg(DKG = #dkg{session=Session, n=N, t=T}, Sender, {echo, Session, VSSDon
                     {NewDKG, ok}
             end
     end;
+handle_msg(DKG, _Sender, {echo, _Session, _VSSDone}=_EchoMsg) ->
+    {DKG, ok};
 
 %% upon a message (L, τ, ready, Q)sign from Pm (first time):
 %%      r(L,Q) ← r(L,Q) + 1
@@ -148,7 +150,7 @@ handle_msg(DKG = #dkg{session=Session, n=N, t=T}, Sender, {echo, Session, VSSDon
 %%          WAIT for shared output-messages for each Pd ∈ Q
 %%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
 %%          output (L, τ, DKG-completed, C, si)
-handle_msg(DKG = #dkg{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}=ReadyMsg) ->
+handle_msg(DKG = #dkg{id=Id, n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}=ReadyMsg) when Sender /= Id ->
     case store_ready(DKG, Sender, ReadyMsg) of
         false ->
             {DKG, ok};
@@ -171,6 +173,9 @@ handle_msg(DKG = #dkg{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}=ReadyMsg
                     end
             end
     end;
+handle_msg(DKG, _Sender, {ready, _Session, _VSSDone}=_ReadyMsg) ->
+    %% DKG received ready message from itself, what to do?
+    {DKG, ok};
 
 %% upon timeout:
 %% if lcflag = false then
@@ -179,11 +184,12 @@ handle_msg(DKG = #dkg{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}=ReadyMsg
 %%      else
 %%          lcflag ← true; send msg (τ, lead-ch, L + 1, Qbar, Mbar)sign to each Pj
 handle_msg(DKG=#dkg{lc_flag=false,
+                    id=Id,
                     t=T,
                     n=N,
                     qbar=Qbar,
                     qhat=Qhat,
-                    session={CurrentLeader, Round}}, _Sender, timeout) ->
+                    session={CurrentLeader, Round}}, Sender, timeout) when Sender /= Id ->
     NewDKG = DKG#dkg{lc_flag=true},
     Msg = case maps:size(Qbar) == 0 of
               true ->
@@ -236,7 +242,9 @@ handle_msg(DKG, _Sender, timeout) ->
 %%              delay ← delay(T )
 %%              start timer(delay)
 
-handle_msg(DKG=#dkg{leader=Leader, n=N, t=T, f=F, qbar=Qbar}, Sender, {leader_change, {Lbar, Round}, Checkpoint}=LeaderChangeMsg) when Lbar > Leader ->
+handle_msg(DKG=#dkg{leader=Leader, id=Id, n=N, t=T, f=F, qbar=Qbar},
+           Sender,
+           {leader_change, {Lbar, Round}, Checkpoint}=LeaderChangeMsg) when Lbar > Leader andalso Sender /= Id ->
     %% XXX is the leader change message unique by sender or by the Q,R/M attachment, or both?
     %% TODO we need to verify these messages are signed
     case store_leader_change(DKG, Sender, LeaderChangeMsg) of
