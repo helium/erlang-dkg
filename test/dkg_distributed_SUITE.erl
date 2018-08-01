@@ -32,8 +32,8 @@ end_per_suite(Config) ->
     Config.
 
 init_per_testcase(TestCase, Config) ->
-    %% assuming each testcase will work with 5 nodes for now
-    NodeNames = [eric, kenny, kyle, ike, stan, randy, butters, token, jimmy, timmy],
+    %% assuming each testcase will work with 7 nodes for now
+    NodeNames = [eric, kenny, kyle, ike, stan, randy, butters],
     Nodes = dkg_ct_utils:pmap(fun(Node) ->
                                         dkg_ct_utils:start_node(Node, Config, TestCase)
                                 end, NodeNames),
@@ -41,8 +41,8 @@ init_per_testcase(TestCase, Config) ->
     _ = [dkg_ct_utils:connect(Node) || Node <- NodeNames],
 
     N = length(Nodes),
-    F = 3,
-    T = 1,
+    F = 0,
+    T = 2,
     {ok, _} = ct_cover:add_nodes(Nodes),
     [{nodes, Nodes}, {n, N}, {f, F}, {t, T} | Config].
 
