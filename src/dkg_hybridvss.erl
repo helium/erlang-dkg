@@ -19,7 +19,7 @@
             sent_echo = false :: boolean(),
             received_commitment = false :: boolean(),
             echoes = #{} :: map(),
-            readies = #{} :: map(),
+            readies = #{} :: readies(),
             commitment :: dkg_commitment:commitment()
          }).
 
@@ -29,7 +29,9 @@
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()], map()}}.
 
--export_type([vss/0, session/0]).
+-type readies() :: #{pos_integer() => ready_msg()}.
+
+-export_type([vss/0, session/0, readies/0]).
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> vss().
 init(Id, N, F, T, G1, G2, Session) ->

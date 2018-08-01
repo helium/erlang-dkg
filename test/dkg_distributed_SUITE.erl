@@ -58,7 +58,7 @@ symmetric_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    {G1, G2} = generate('SS512'),
+    {G1, G2} = dkg_test_utils:generate('SS512'),
     run(N, F, T, 'SS512', G1, G2, Nodes),
     ok.
 
@@ -67,21 +67,10 @@ asymmetric_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    {G1, G2} = generate('MNT224'),
+    {G1, G2} = dkg_test_utils:generate('MNT224'),
     run(N, F, T, 'MNT224', G1, G2, Nodes),
     ok.
 
-enumerate(List) ->
-    lists:zip(lists:seq(1, length(List)), List).
-
-generate(Curve) ->
-    Group = erlang_pbc:group_new(Curve),
-    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
-    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
-             true -> G1;
-             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
-         end,
-    {G1, G2}.
 
 run(N, F, T, Curve, G1, G2, Nodes) ->
     %% load dkg_worker on each node
@@ -94,7 +83,7 @@ run(N, F, T, Curve, G1, G2, Nodes) ->
     Workers = [{Node, rpc:call(Node,
                                dkg_worker,
                                start_link,
-                               [I, N, F, T, Curve, erlang_pbc:element_to_binary(G1), erlang_pbc:element_to_binary(G2), 0])} || {I, Node} <- enumerate(Nodes)],
+                               [I, N, F, T, Curve, erlang_pbc:element_to_binary(G1), erlang_pbc:element_to_binary(G2), 0])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
     ok = global:sync(),
 
     ct:pal("workers ~p", [Workers]),
