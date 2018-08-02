@@ -11,7 +11,7 @@
           f :: pos_integer(),
           t :: pos_integer(),
           id :: pos_integer(),
-          dkg :: any(),
+          dkg :: dkg_hybriddkg:dkg(),
           curve :: 'SS512' | 'MNT224',
           g1 :: erlang_pbc:element(),
           g2 :: erlang_pbc:element(),

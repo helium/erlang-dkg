@@ -4,14 +4,12 @@
 
 -export([handle_msg/3]).
 
--type session() :: {Leader :: pos_integer(), Round :: pos_integer()}.
 -type rhat() :: [vss_ready()].
--type qbar() :: [pos_integer()].
--type qhat() :: [pos_integer()].
+-type qset() :: [pos_integer()].
 -type mbar() :: [signed_ready() | signed_echo()].
--type signed_leader_change() :: {signed_leader_change, session(), qhat(), rhat()} | {leader_change, session(), qbar(), mbar()}.
--type signed_echo() :: {signed_echo, session(), qhat() | qbar()}.
--type signed_ready() :: {signed_ready, session(), qhat() | qbar()}.
+-type signed_leader_change() :: {signed_leader_change, pos_integer(), qset(), rhat() | mbar()}.
+-type signed_echo() :: {signed_echo, qset()}.
+-type signed_ready() :: {signed_ready, qset()}.
 -type vss_ready() :: {signed_vss_ready, dkg_hybridvss:readies()}.
 -type identity() :: {Leader :: pos_integer(), Q :: [pos_integer()]}.
 -type echo() :: {Sender :: pos_integer(), SignedEcho :: signed_echo()}.
@@ -21,7 +19,6 @@
 -type lc_map() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
 
 -record(dkg, {
-          state = leader_unconfirmed :: leader_unconfirmed | functional | agreement_started | agreement_completed | leader_change_started | dkg_completed,
           id :: pos_integer(),
           n :: pos_integer(),
           f :: pos_integer(),
@@ -30,13 +27,12 @@
           u2 :: erlang_pbc:element(),
           vss_map :: #{pos_integer() => dkg_hybridvss:vss()},
           vss_results = #{} :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}},
-          qbar = [] :: qbar(),
-          qhat = [] :: qhat(),
+          qbar = [] :: qset(),
+          qhat = [] :: qset(),
           rhat = [] :: rhat(),
           mbar = [] :: mbar(),
           elq = #{} :: elq(),
           rlq = #{} :: rlq(),
-          session :: session(),
           lc_flag = false :: boolean(),
           leader :: pos_integer(),
           l_next :: pos_integer(),
@@ -44,6 +40,7 @@
          }).
 
 -type dkg() :: #dkg{}.
+-export_type([dkg/0]).
 
 %% upon initialization:
 %%      e(L, Q) <- 0 and r(L, Q) <- 0 for every Q; Qbar <- ∅; Q <- ∅
@@ -56,7 +53,6 @@
 init(Id, N, F, T, G1, G2, Round) ->
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
-    Session = {1, Round},
     VSSes = lists:foldl(fun(E, Map) ->
                                 VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
                                 maps:put(E, VSS, Map)
@@ -70,29 +66,20 @@ init(Id, N, F, T, G1, G2, Round) ->
          u2=G2,
          leader=1,
          l_next=l_next(1, N),
-         session=Session,
          vss_map=VSSes}.
 
 start(DKG = #dkg{id=Id, u=G1}) ->
     MyVSS = maps:get(Id, DKG#dkg.vss_map),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
     {NewVSS, {send, ToSend}} = dkg_hybridvss:input(MyVSS, Secret),
-    {DKG#dkg{vss_map=maps:put(Id, NewVSS, DKG#dkg.vss_map), state=functional}, {send, dkg_util:wrap({vss, Id, DKG#dkg.session}, ToSend)}}.
+    {DKG#dkg{vss_map=maps:put(Id, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
-
-%% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
-%%      Qhat ← {Pd}; Rhat ← {Rd}
-%%      if |Qhat| = t + 1 and Qbar = ∅ then
-%%           if Pi = L then
-%%               send the message (L, τ, send, Qhat, Rhat) to each Pj
-%%            else
-%%               delay ← delay(T); start timer(delay)
-handle_msg(DKG = #dkg{session=Session={Leader, _}}, Sender, {{vss, VSSId, Session}, VssMSG}) ->
+handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
-            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map), state=agreement_started}, ok};
+            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
-            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map), state=agreement_started}, {send, dkg_util:wrap({vss, VSSId, Session}, ToSend)}};
+            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, VSSId}, ToSend)}};
         {NewVSS, {result, {_Session, Commitment, Si, Rd}}} ->
             %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
             %%      Qhat ← {Pd}; Rhat ← {Rd}
@@ -113,7 +100,7 @@ handle_msg(DKG = #dkg{session=Session={Leader, _}}, Sender, {{vss, VSSId, Sessio
                 true ->
                     case NewDKG#dkg.id == Leader of
                         true ->
-                            {NewDKG, {send, [{multicast, {send, Session, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]}};
+                            {NewDKG, {send, [{multicast, {send, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]}};
                         false ->
                             {NewDKG, start_timer}
                     end;
@@ -125,24 +112,21 @@ handle_msg(DKG = #dkg{session=Session={Leader, _}}, Sender, {{vss, VSSId, Sessio
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
 %%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
 %%          send the message (L, τ, echo, Q)sign to each Pj
-handle_msg(DKG = #dkg{session=Session={_Leader, _}}, _Sender, {send, Session, Q, {rhat, _Rhat}}) ->
+handle_msg(DKG, _Sender, {send, Q, {rhat, _Rhat}}) ->
     %% TODO verify signatures
     case length(DKG#dkg.qbar) == 0 orelse lists:usort(DKG#dkg.qbar) == lists:usort(Q) of
         true ->
-            {DKG, {send, [{multicast, {signed_echo, Session, Q}}]}};
+            {DKG, {send, [{multicast, {signed_echo, Q}}]}};
         false ->
             {DKG, ok}
     end;
-handle_msg(DKG, _Sender, {send, _Session, _, _}) ->
-    {DKG, ok};
-
 
 %% upon a message (L, τ, echo, Q)sign from Pm (first time):
 %%      e(L,Q) ← e(L,Q) + 1
 %%      if e(L,Q) = ceil((n+t+1)/2) and r(L,Q) < t + 1 then
 %%          Qbar ← Q; Mbar ← ceil((n+t+1)/2) signed echo messages for Q
 %%          send the message (L, τ, ready, Q)sign to each Pj
-handle_msg(DKG = #dkg{id=_Id, session=Session, n=N, t=T}, Sender, {signed_echo, Session, Q}=EchoMsg) ->
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Q}=EchoMsg) ->
     case update_elq(DKG, Sender, EchoMsg) of
         false ->
             {DKG, ok};
@@ -154,13 +138,11 @@ handle_msg(DKG = #dkg{id=_Id, session=Session, n=N, t=T}, Sender, {signed_echo, 
                     %% update mbar
                     NewMbar = get_echo(NewDKG, Q),
                     %% send ready message
-                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Session, Q}}]}};
+                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
                 false ->
                     {NewDKG, ok}
             end
     end;
-handle_msg(DKG, _Sender, {signed_echo, _Session, _}=_EchoMsg) ->
-    {DKG, ok};
 
 %% upon a message (L, τ, ready, Q)sign from Pm (first time):
 %%      r(L,Q) ← r(L,Q) + 1
@@ -172,19 +154,17 @@ handle_msg(DKG, _Sender, {signed_echo, _Session, _}=_EchoMsg) ->
 %%          WAIT for shared output-messages for each Pd ∈ Q
 %%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
 %%          output (L, τ, DKG-completed, C, si)
-handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Session, Q}=ReadyMsg) ->
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Q}=ReadyMsg) ->
     case update_rlq(DKG, Sender, ReadyMsg) of
         false ->
             {DKG, ok};
         {true, NewDKG} ->
             case count_ready(NewDKG, Q) == T+1 andalso count_echo(NewDKG, Q) < ceil((N+T+1)/2) of
                 true ->
-                    %% update qbar
+                    %% NOTE: qbar and mbar are new assignments here
                     NewQbar = Q,
-                    %% update mbar
                     NewMbar = get_ready(NewDKG, Q),
-                    %% send ready msg
-                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Session, Q}}]}};
+                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
                 false ->
                     case count_ready(NewDKG, Q) == N-T-F of
                         true ->
@@ -194,13 +174,13 @@ handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Session, Q}
                             PublicKeyShares = public_key_shares(NewDKG, OutputCommitment),
                             VerificationKey = verification_key(OutputCommitment),
                             Shard = shard(NewDKG),
-                            {NewDKG#dkg{state=dkg_completed}, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                            {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
                         false ->
-                            {NewDKG#dkg{state=agreement_started}, ok}
+                            {NewDKG, ok}
                     end
             end
     end;
-handle_msg(DKG, _Sender, {signed_ready, _Session, _VSSDone}=_ReadyMsg) ->
+handle_msg(DKG, _Sender, {signed_ready, _VSSDone}=_ReadyMsg) ->
     %% DKG received ready message from itself, what to do?
     {DKG, ok};
 
@@ -216,21 +196,20 @@ handle_msg(DKG=#dkg{lc_flag=false,
                     qhat=Qhat,
                     rhat=Rhat,
                     mbar=Mbar,
-                    session={CurrentLeader, Round}}, _Sender, timeout) ->
+                    leader=CurrentLeader}, _Sender, timeout) ->
     NewDKG = DKG#dkg{lc_flag=true},
 
     Msg = case length(Qbar) == 0 of
               true ->
-                  {send, [{multicast, {signed_leader_change, {CurrentLeader+1, Round}, Qhat, {rhat, Rhat}}}]};
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qhat, {rhat, Rhat}}}]};
               false ->
-                  {send, [{multicast, {signed_leader_change, {CurrentLeader+1, Round}, Qbar, {mbar, Mbar}}}]}
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qbar, {mbar, Mbar}}}]}
           end,
     {NewDKG, Msg};
 handle_msg(DKG, _Sender, timeout) ->
     %% lc_flag is true
     {DKG, ok};
 
-%% TODO
 %% Leader-change for node Pi: session (τ ) and leader L
 %%      upon a msg (τ, lead-ch, Lbar, Q, R/M)sign from Pj (first time):
 %%      if Lbar > L and verify-signature(Q, R/M) then
@@ -259,11 +238,10 @@ handle_msg(DKG, _Sender, timeout) ->
 %%              start timer(delay)
 handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next=LNext},
            Sender,
-           {signed_leader_change, {Lbar, Round}, Q, RorM}=LeaderChangeMsg) when Lbar > Leader ->
+           {signed_leader_change, Lbar, Q, RorM}=LeaderChangeMsg) when Lbar > Leader ->
     %% TODO: verify the signature(Q, R/M)
     case store_leader_change(DKG, Sender, LeaderChangeMsg) of
         {true, NewDKG0} ->
-            %% new lnext
             NewLNext = min(LNext, Lbar),
             NewDKG = case RorM of
                          {rhat, Rhat} ->
@@ -278,9 +256,9 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
                 true ->
                     case length(NewDKG#dkg.qbar) == 0 of
                         true ->
-                            {send, [{multicast, {signed_leader_change, {NewLNext, Round}, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]};
+                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]};
                         false ->
-                            {send, [{multicast, {signed_leader_change, {NewLNext, Round}, NewDKG#dkg.qbar, {mbar, NewDKG#dkg.mbar}}}]}
+                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qbar, {mbar, NewDKG#dkg.mbar}}}]}
                     end;
                 false ->
                     LeaderChangeMsgs = maps:get(Lbar, NewDKG#dkg.lc_map, []),
@@ -290,21 +268,19 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
                             NewLeader = Lbar,
                             NewerLNext = l_next(Leader, N),
                             NewLeaderChangeMap = maps:put(NewLeader, [], NewDKG#dkg.lc_map),
-                            NewSession = {NewLeader, Round},
                             NewerDKG = NewDKG#dkg{lc_flag=false,
                                                   mbar=NewerMbar,
                                                   rhat=NewerRhat,
                                                   leader=NewLeader,
                                                   l_next=NewerLNext,
-                                                  lc_map=NewLeaderChangeMap,
-                                                  session=NewSession},
+                                                  lc_map=NewLeaderChangeMap},
                             case DKG#dkg.id == NewLeader of
                                 true ->
                                     case length(NewerDKG#dkg.qbar) == 0 of
                                         true ->
-                                            {NewerDKG, {send, [{multicast, {send, NewSession, NewerDKG#dkg.qhat, {rhat, NewerDKG#dkg.rhat}}}]}};
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qhat, {rhat, NewerDKG#dkg.rhat}}}]}};
                                         false ->
-                                            {NewerDKG, {send, [{multicast, {send, NewSession, NewerDKG#dkg.qbar, {mbar, NewerDKG#dkg.mbar}}}]}}
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qbar, {mbar, NewerDKG#dkg.mbar}}}]}}
                                     end;
                                 false ->
                                     {NewerDKG, start_timer}
@@ -316,7 +292,7 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
         false ->
             {DKG, ok}
     end;
-handle_msg(DKG, _Sender, {signed_leader_change, {_Lbar, _Round}, _, _}) ->
+handle_msg(DKG, _Sender, {signed_leader_change, _Lbar, _, _}) ->
     {DKG, ok};
 handle_msg(DKG, _Sender, Msg) ->
     {DKG, {unhandled_msg, Msg}}.
@@ -342,6 +318,7 @@ shard(_DKG=#dkg{vss_results=R, u=U}) ->
     maps:fold(fun(_K, {_, Si}, Acc) ->
                         erlang_pbc:element_add(Acc, Si)
               end, Zero, R).
+
 -spec l_next(pos_integer(), pos_integer()) -> pos_integer().
 l_next(L, N) ->
     case L - 1 < 1 of
@@ -351,16 +328,16 @@ l_next(L, N) ->
             L - 1
     end.
 
--spec count_echo(dkg(), qhat() | qbar()) -> non_neg_integer().
+-spec count_echo(dkg(), qset()) -> non_neg_integer().
 count_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
     length(maps:get({Leader, Q}, Elq, [])).
 
--spec get_echo(dkg(), qhat() | qbar()) -> [echo()].
+-spec get_echo(dkg(), qset()) -> [echo()].
 get_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q) -> maps:get({Leader, Q}, Elq, []).
 
 -spec update_elq(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
-update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, _Session, Q0}=EchoMsg) ->
+update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, Q0}=EchoMsg) ->
     Q = lists:usort(Q0),
     EchoForQAndLeader = maps:get({DKG#dkg.leader, Q}, Elq, []),
     case lists:keyfind(Sender, 1, EchoForQAndLeader) of
@@ -372,16 +349,16 @@ update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, _Session, Q0}=EchoMsg) ->
             false
     end.
 
--spec count_ready(dkg(), qhat() | qbar()) -> non_neg_integer().
+-spec count_ready(dkg(), qset()) -> non_neg_integer().
 count_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
     length(maps:get({Leader, Q}, Rlq, [])).
 
--spec get_ready(dkg(), qhat() | qbar()) -> [ready()].
+-spec get_ready(dkg(), qset()) -> [ready()].
 get_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q) -> maps:get({Leader, Q}, Rlq, []).
 
 -spec update_rlq(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
-update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, _Session, Q0}=ReadyMsg) ->
+update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
     Q = lists:usort(Q0),
     ReadyForQAndLeader = maps:get({DKG#dkg.leader, Q}, Rlq, []),
     case lists:keyfind(Sender, 1, ReadyForQAndLeader) of
@@ -397,7 +374,7 @@ update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, _Session, Q0}=ReadyMsg) ->
 count_leader_change(DKG) -> length(lists:flatten(maps:keys(DKG#dkg.lc_map))).
 
 -spec store_leader_change(dkg(), pos_integer(), signed_leader_change()) -> {true, dkg()} | false.
-store_leader_change(DKG, Sender, {signed_leader_change, {Lbar, _Round}, _, _}=LeaderChangeMsg) ->
+store_leader_change(DKG, Sender, {signed_leader_change, Lbar, _, _}=LeaderChangeMsg) ->
     L = maps:get(Lbar, DKG#dkg.lc_map, []),
     case lists:keyfind(Sender, 1, L) of
         false ->
