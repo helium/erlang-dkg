@@ -5,7 +5,7 @@
 allnodes(N) -> lists:seq(1, N).
 
 %% wrap a subprotocol's outbound messages with a protocol identifier
--spec wrap(Tag :: {vss, non_neg_integer(), dkg_hybridvss:session()}, [{multicast, Msg :: any()} | {unicast, non_neg_integer(),  Msg :: any()}]) -> [{multicast, {Tag, Msg}} | {unicast, non_neg_integer(), {Tag, Msg}}].
+-spec wrap(Tag :: {vss, non_neg_integer()}, [{multicast, Msg :: any()} | {unicast, non_neg_integer(),  Msg :: any()}]) -> [{multicast, {Tag, Msg}} | {unicast, non_neg_integer(), {Tag, Msg}}].
 wrap(_, []) ->
     [];
 wrap(Id, [{multicast, Msg}|T]) ->

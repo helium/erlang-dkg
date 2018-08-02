@@ -11,7 +11,7 @@
           f :: pos_integer(),
           t :: pos_integer(),
           id :: pos_integer(),
-          dkg :: any(),
+          dkg :: dkg_hybriddkg:dkg(),
           curve :: 'SS512' | 'MNT224',
           g1 :: erlang_pbc:element(),
           g2 :: erlang_pbc:element(),
@@ -94,7 +94,6 @@ dispatch(Other, State) ->
 do_send([], _) ->
     ok;
 do_send([{unicast, Dest, Msg}|T], State) ->
-    %io:format("~p unicasting ~p to ~p~n", [State#state.id, Msg, global:whereis_name(name(Dest))]),
     gen_server:cast({global, name(Dest)}, {dkg, State#state.id, Msg}),
     do_send(T, State);
 do_send([{multicast, Msg}|T], State) ->

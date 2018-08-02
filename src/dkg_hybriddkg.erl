@@ -4,13 +4,21 @@
 
 -export([handle_msg/3]).
 
--type session() :: {Leader :: pos_integer(), Round :: pos_integer()}.
+-type rhat() :: [vss_ready()].
+-type qset() :: [pos_integer()].
+-type mbar() :: [signed_ready() | signed_echo()].
+-type signed_leader_change() :: {signed_leader_change, pos_integer(), qset(), rhat() | mbar()}.
+-type signed_echo() :: {signed_echo, qset()}.
+-type signed_ready() :: {signed_ready, qset()}.
+-type vss_ready() :: {signed_vss_ready, dkg_hybridvss:readies()}.
+-type identity() :: {Leader :: pos_integer(), Q :: [pos_integer()]}.
+-type echo() :: {Sender :: pos_integer(), SignedEcho :: signed_echo()}.
+-type ready() :: {Sender :: pos_integer(), SignedReady :: signed_ready()}.
+-type elq() :: #{identity() => [echo()]}.
+-type rlq() :: #{identity() => [ready()]}.
+-type lc_map() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
 
- %% Q hat in the protocol
--type qhat() :: #{pos_integer() => {dkg_commitment:commitment(), erlang_pbc:element()}}.
--type qbar() :: #{pos_integer() => erlang_pbc:element()}.
-
--record(state, {
+-record(dkg, {
           id :: pos_integer(),
           n :: pos_integer(),
           f :: pos_integer(),
@@ -18,14 +26,21 @@
           u :: erlang_pbc:element(),
           u2 :: erlang_pbc:element(),
           vss_map :: #{pos_integer() => dkg_hybridvss:vss()},
-          echoes_this_round = [] :: [non_neg_integer()], %% eL,Q in the protocol, echoes seen this round
-          readies_this_round = [] :: [non_neg_integer()], %% rL,Q in the protocol, readies seen this round
-          vss_done_this_round = #{} :: qhat(),
-          vss_done_last_round = #{} :: qbar(),
-          leader = 1 :: pos_integer(),
-          session :: session(),
-          started = false :: boolean()
+          vss_results = #{} :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}},
+          qbar = [] :: qset(),
+          qhat = [] :: qset(),
+          rhat = [] :: rhat(),
+          mbar = [] :: mbar(),
+          elq = #{} :: elq(),
+          rlq = #{} :: rlq(),
+          lc_flag = false :: boolean(),
+          leader :: pos_integer(),
+          l_next :: pos_integer(),
+          lc_map = #{} :: lc_map()
          }).
+
+-type dkg() :: #dkg{}.
+-export_type([dkg/0]).
 
 %% upon initialization:
 %%      e(L, Q) <- 0 and r(L, Q) <- 0 for every Q; Qbar <- ∅; Q <- ∅
@@ -38,61 +53,72 @@
 init(Id, N, F, T, G1, G2, Round) ->
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
-    Session = {1, Round},
     VSSes = lists:foldl(fun(E, Map) ->
-                              VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
-                              maps:put(E, VSS, Map)
-                      end, #{}, dkg_util:allnodes(N)),
-    #state{id=Id, n=N, f=F, t=T, u=G1, u2=G2, session=Session, vss_map=VSSes}.
+                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
+                                maps:put(E, VSS, Map)
+                        end, #{}, dkg_util:allnodes(N)),
 
-start(State = #state{started=false, id=Id, u=Generator}) ->
-    MyVSS = maps:get(Id, State#state.vss_map),
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Generator)),
+    #dkg{id=Id,
+         n=N,
+         f=F,
+         t=T,
+         u=G1,
+         u2=G2,
+         leader=1,
+         l_next=l_next(1, N),
+         vss_map=VSSes}.
+
+start(DKG = #dkg{id=Id, u=G1}) ->
+    MyVSS = maps:get(Id, DKG#dkg.vss_map),
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
     {NewVSS, {send, ToSend}} = dkg_hybridvss:input(MyVSS, Secret),
-    {State#state{vss_map=maps:put(Id, NewVSS, State#state.vss_map), started=true}, {send, dkg_util:wrap({vss, Id, State#state.session}, ToSend)}}.
+    {DKG#dkg{vss_map=maps:put(Id, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
-%% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
-%%      Qhat ← {Pd}; Rhat ← {Rd}
-%%      if |Qhat| = t + 1 and Qbar = ∅ then
-%%           if Pi = L then
-%%               send the message (L, τ, send, Qhat, Rhat) to each Pj
-%%            else
-%%               delay ← delay(T); start timer(delay)
-handle_msg(State = #state{session=Session={Leader, _}}, Sender, {{vss, VssID, Session}, VssMSG}) ->
-    case dkg_hybridvss:handle_msg(maps:get(VssID, State#state.vss_map), Sender, VssMSG) of
+handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
+    case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
         {NewVSS, ok} ->
-            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, ok};
+            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
-            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map)}, {send, dkg_util:wrap({vss, VssID, Session}, ToSend)}};
-        {NewVSS, {result, {_Session, Commitment, Si}}} ->
+            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, VSSId}, ToSend)}};
+        {NewVSS, {result, {_Session, Commitment, Si, Rd}}} ->
+            %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
+            %%      Qhat ← {Pd}; Rhat ← {Rd}
+            %%      if |Qhat| = t + 1 and Qbar = ∅ then
+            %%           if Pi = L then
+            %%               send the message (L, τ, send, Qhat, Rhat) to each Pj
+            %%            else
+            %%               delay ← delay(T); start timer(delay)
             %% TODO 'extended' VSS should output signed ready messages
-            VSSDoneThisRound = maps:put(VssID, {Commitment, Si}, State#state.vss_done_this_round),
-            case maps:size(VSSDoneThisRound) == State#state.t + 1 andalso maps:size(State#state.vss_done_last_round) == 0 of
+
+            NewDKG = DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map),
+                             vss_results=maps:put(VSSId, {Commitment, Si}, DKG#dkg.vss_results),
+                             qhat=[VSSId | DKG#dkg.qhat],
+                             rhat=[{signed_vss_ready, Rd} | DKG#dkg.rhat]
+                            },
+
+            case length(NewDKG#dkg.qhat) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.qbar) == 0 of
                 true ->
-                    case State#state.id == Leader of
+                    case NewDKG#dkg.id == Leader of
                         true ->
-                            %% this is not multicast in the protocol, but we have multicast support, sooooooo....
-                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map),
-                                         vss_done_this_round=VSSDoneThisRound},
-                             {send, [{multicast, {send, Session, maps:keys(VSSDoneThisRound)}}]}};
+                            {NewDKG, {send, [{multicast, {send, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]}};
                         false ->
-                            {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
+                            {NewDKG, start_timer}
                     end;
                 false ->
-                    {State#state{vss_map=maps:put(VssID, NewVSS, State#state.vss_map), vss_done_this_round=VSSDoneThisRound}, ok}
+                    {NewDKG, ok}
             end
     end;
 
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
 %%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
 %%          send the message (L, τ, echo, Q)sign to each Pj
-handle_msg(State = #state{session=Session={Leader, _}}, Sender, {send, Session, VSSDone}) when Sender == Leader ->
+handle_msg(DKG, _Sender, {send, Q, {rhat, _Rhat}}) ->
     %% TODO verify signatures
-    case maps:size(State#state.vss_done_last_round) == 0 orelse lists:sort(maps:keys(State#state.vss_done_this_round)) == lists:sort(VSSDone) of
+    case length(DKG#dkg.qbar) == 0 orelse lists:usort(DKG#dkg.qbar) == lists:usort(Q) of
         true ->
-            {State, {send, [{multicast, {echo, Session, VSSDone}}]}};
+            {DKG, {send, [{multicast, {signed_echo, Q}}]}};
         false ->
-            {State, ok}
+            {DKG, ok}
     end;
 
 %% upon a message (L, τ, echo, Q)sign from Pm (first time):
@@ -100,19 +126,22 @@ handle_msg(State = #state{session=Session={Leader, _}}, Sender, {send, Session, 
 %%      if e(L,Q) = ceil((n+t+1)/2) and r(L,Q) < t + 1 then
 %%          Qbar ← Q; Mbar ← ceil((n+t+1)/2) signed echo messages for Q
 %%          send the message (L, τ, ready, Q)sign to each Pj
-handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VSSDone}) ->
-    case lists:member(Sender, State#state.echoes_this_round) of
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Q}=EchoMsg) ->
+    case update_elq(DKG, Sender, EchoMsg) of
         false ->
-            EchoesThisRound = [Sender | State#state.echoes_this_round],
-            case length(EchoesThisRound) == ceil((N + T + 1) / 2) andalso length(State#state.readies_this_round) < T + 1 of
+            {DKG, ok};
+        {true, NewDKG} ->
+            case count_echo(NewDKG, Q) == ceil((N+T+1)/2) andalso count_ready(NewDKG, Q) < T+1 of
                 true ->
-                    %% TODO QBar <- Q, MBar <- ...
-                    {State#state{echoes_this_round=EchoesThisRound}, {send, [{multicast, {ready, Session, VSSDone}}]}};
+                    %% update qbar
+                    NewQbar = Q,
+                    %% update mbar
+                    NewMbar = get_echo(NewDKG, Q),
+                    %% send ready message
+                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
                 false ->
-                    {State#state{echoes_this_round=EchoesThisRound}, ok}
-            end;
-        true ->
-            {State, ok}
+                    {NewDKG, ok}
+            end
     end;
 
 %% upon a message (L, τ, ready, Q)sign from Pm (first time):
@@ -125,63 +154,232 @@ handle_msg(State = #state{session=Session, n=N, t=T}, Sender, {echo, Session, VS
 %%          WAIT for shared output-messages for each Pd ∈ Q
 %%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
 %%          output (L, τ, DKG-completed, C, si)
-handle_msg(State = #state{n=N, t=T, f=F}, Sender, {ready, Session, VSSDone}) ->
-    case lists:member(Sender, State#state.readies_this_round) of
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Q}=ReadyMsg) ->
+    case update_rlq(DKG, Sender, ReadyMsg) of
         false ->
-            ReadiesThisRound = [Sender | State#state.readies_this_round],
-            case length(ReadiesThisRound) == T + 1 andalso length(State#state.echoes_this_round) < ceil((N + T + 1) /2) of
+            {DKG, ok};
+        {true, NewDKG} ->
+            case count_ready(NewDKG, Q) == T+1 andalso count_echo(NewDKG, Q) < ceil((N+T+1)/2) of
                 true ->
-                    %% TODO QBar <- Q, MBar <- ...
-                    {State#state{readies_this_round=ReadiesThisRound}, {send, [{multicast, {ready, Session, VSSDone}}]}};
+                    %% NOTE: qbar and mbar are new assignments here
+                    NewQbar = Q,
+                    NewMbar = get_ready(NewDKG, Q),
+                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
                 false ->
-                    case length(ReadiesThisRound) == N - T - F of
+                    case count_ready(NewDKG, Q) == N-T-F of
                         true ->
-                            case lists:all(fun(E) -> maps:is_key(E, State#state.vss_done_this_round) end, ReadiesThisRound) of
+                            %% TODO stop timer
+                            %% TODO presumably we need to check this when we get a VSS result as well?
+                            OutputCommitment = output_commitment(NewDKG),
+                            PublicKeyShares = public_key_shares(NewDKG, OutputCommitment),
+                            VerificationKey = verification_key(OutputCommitment),
+                            Shard = shard(NewDKG),
+                            {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                        false ->
+                            {NewDKG, ok}
+                    end
+            end
+    end;
+handle_msg(DKG, _Sender, {signed_ready, _VSSDone}=_ReadyMsg) ->
+    %% DKG received ready message from itself, what to do?
+    {DKG, ok};
+
+%% upon timeout:
+%% if lcflag = false then
+%%      if Q = ∅ then
+%%          lcflag ← true; send msg (τ, lead-ch, L + 1, Qhat, Rhat)sign to each Pj
+%%      else
+%%          lcflag ← true; send msg (τ, lead-ch, L + 1, Qbar, Mbar)sign to each Pj
+handle_msg(DKG=#dkg{lc_flag=false,
+                    id=_Id,
+                    qbar=Qbar,
+                    qhat=Qhat,
+                    rhat=Rhat,
+                    mbar=Mbar,
+                    leader=CurrentLeader}, _Sender, timeout) ->
+    NewDKG = DKG#dkg{lc_flag=true},
+
+    Msg = case length(Qbar) == 0 of
+              true ->
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qhat, {rhat, Rhat}}}]};
+              false ->
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qbar, {mbar, Mbar}}}]}
+          end,
+    {NewDKG, Msg};
+handle_msg(DKG, _Sender, timeout) ->
+    %% lc_flag is true
+    {DKG, ok};
+
+%% Leader-change for node Pi: session (τ ) and leader L
+%%      upon a msg (τ, lead-ch, Lbar, Q, R/M)sign from Pj (first time):
+%%      if Lbar > L and verify-signature(Q, R/M) then
+%%          lcL ← lcL + 1
+%%          Lnext ← min (Lnext , L)
+%%          if R/M = R then
+%%              Qhat ← Q; Rhat <- R
+%%          else
+%%              Qbar ← Q; Mbar ← M
+%%      if (SUM(lcL) = t + f + 1 and lcflag = false) then
+%%          if Qbar = ∅ then
+%%              send the msg (τ, lead-ch, Lnext, Qhat, Rhat) to each Pj
+%%          else
+%%              send the msg (τ, lead-ch, Lnext, Qbar, Mbar) to each Pj
+%%      else if (lcL = n − t − f ) then
+%%          Mbar ← R <- n − t − f signed lead-ch messages for Lbar
+%%          L ← Lbar; Lnext ← L − 1
+%%          lcL ← 0; lcflag = false
+%%          if Pi = L then
+%%              if Q = ∅ then
+%%                  send the message (L, τ, send, Qhat, Rhat) to each Pj
+%%              else
+%%                  send the message (L, τ, send, Qbar, Mbar) to each Pj
+%%          else
+%%              delay ← delay(T )
+%%              start timer(delay)
+handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next=LNext},
+           Sender,
+           {signed_leader_change, Lbar, Q, RorM}=LeaderChangeMsg) when Lbar > Leader ->
+    %% TODO: verify the signature(Q, R/M)
+    case store_leader_change(DKG, Sender, LeaderChangeMsg) of
+        {true, NewDKG0} ->
+            NewLNext = min(LNext, Lbar),
+            NewDKG = case RorM of
+                         {rhat, Rhat} ->
+                             %% FIXME: do this better
+                             NewQhat = lists:usort(Qhat0 ++ Q),
+                             NewRhat = lists:usort(Rhat0 ++ Rhat),
+                             NewDKG0#dkg{qhat=NewQhat, rhat=NewRhat};
+                         {mbar, Mbar} ->
+                             NewDKG0#dkg{qbar=Q, mbar=Mbar}
+                     end,
+            case count_leader_change(NewDKG) == T+F+1 andalso not NewDKG#dkg.lc_flag of
+                true ->
+                    case length(NewDKG#dkg.qbar) == 0 of
+                        true ->
+                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]};
+                        false ->
+                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qbar, {mbar, NewDKG#dkg.mbar}}}]}
+                    end;
+                false ->
+                    LeaderChangeMsgs = maps:get(Lbar, NewDKG#dkg.lc_map, []),
+                    case length(LeaderChangeMsgs) == N-T-F of
+                        true ->
+                            NewerMbar = NewerRhat = LeaderChangeMsgs,
+                            NewLeader = Lbar,
+                            NewerLNext = l_next(Leader, N),
+                            NewLeaderChangeMap = maps:put(NewLeader, [], NewDKG#dkg.lc_map),
+                            NewerDKG = NewDKG#dkg{lc_flag=false,
+                                                  mbar=NewerMbar,
+                                                  rhat=NewerRhat,
+                                                  leader=NewLeader,
+                                                  l_next=NewerLNext,
+                                                  lc_map=NewLeaderChangeMap},
+                            case DKG#dkg.id == NewLeader of
                                 true ->
-                                    %% TODO presumably we need to check this when we get a VSS result as well?
-                                    OutputCommitment = output_commitment(State, VSSDone),
-                                    PublicKeyShares = public_key_shares(State, OutputCommitment),
-                                    VerificationKey = verification_key(OutputCommitment),
-                                    Shard = shard(State, VSSDone),
-                                    {State#state{readies_this_round=ReadiesThisRound}, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                                    case length(NewerDKG#dkg.qbar) == 0 of
+                                        true ->
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qhat, {rhat, NewerDKG#dkg.rhat}}}]}};
+                                        false ->
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qbar, {mbar, NewerDKG#dkg.mbar}}}]}}
+                                    end;
                                 false ->
-                                    {State#state{readies_this_round=ReadiesThisRound}, ok}
+                                    {NewerDKG, start_timer}
                             end;
                         false ->
-                            {State#state{readies_this_round=ReadiesThisRound}, ok}
+                            {NewDKG, ok}
                     end
             end;
-        true ->
-            {State, ok}
+        false ->
+            {DKG, ok}
     end;
-handle_msg(State, _Sender, Msg) ->
-    {State, {unhandled_msg, Msg}}.
+handle_msg(DKG, _Sender, {signed_leader_change, _Lbar, _, _}) ->
+    {DKG, ok};
+handle_msg(DKG, _Sender, Msg) ->
+    {DKG, {unhandled_msg, Msg}}.
 
 %% helper functions
--spec output_commitment(#state{}, [non_neg_integer()]) -> dkg_commitment:commitment().
-output_commitment(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
-    [FirstCommitment | RemainingCommitments] = lists:foldl(fun(VSSId, Acc) ->
-                                                                   {Commitment, _} = maps:get(VSSId, VSSDoneThisRound),
-                                                                   [Commitment | Acc]
-                                                           end, [], VSSDone),
-    lists:foldl(fun(Commitment, Acc) ->
-                        dkg_commitment:mul(Acc, Commitment)
-                end, FirstCommitment, RemainingCommitments).
+-spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
+output_commitment(_DKG=#dkg{vss_results=R, u2=U2, t=T, n=N}) ->
+    maps:fold(fun(_K, {Commitment, _}, Acc) ->
+                      dkg_commitment:mul(Commitment, Acc)
+              end, dkg_commitment:new(lists:seq(1, N), U2, T), R).
 
--spec public_key_shares(#state{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
-public_key_shares(_State=#state{n=N}, OutputCommitment) ->
+-spec public_key_shares(#dkg{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
+public_key_shares(_DKG=#dkg{n=N}, OutputCommitment) ->
     [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- dkg_util:allnodes(N)].
 
 -spec verification_key(dkg_commitment:commitment()) -> erlang_pbc:element().
 verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
--spec shard(#state{}, [non_neg_integer()]) -> erlang_pbc:element().
-shard(_State=#state{vss_done_this_round=VSSDoneThisRound}, VSSDone) ->
-    [FirstShare | RemainingShares] = lists:foldl(fun(VSSId, Acc) ->
-                                                         {_, Share} = maps:get(VSSId, VSSDoneThisRound),
-                                                         [Share | Acc]
-                                                 end, [], VSSDone),
-    lists:foldl(fun(Share, Acc) ->
-                        erlang_pbc:element_add(Acc, Share)
-                end, FirstShare, RemainingShares).
+-spec shard(#dkg{}) -> erlang_pbc:element().
+shard(_DKG=#dkg{vss_results=R, u=U}) ->
+    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
+    maps:fold(fun(_K, {_, Si}, Acc) ->
+                        erlang_pbc:element_add(Acc, Si)
+              end, Zero, R).
+
+-spec l_next(pos_integer(), pos_integer()) -> pos_integer().
+l_next(L, N) ->
+    case L - 1 < 1 of
+        true ->
+            N;
+        false ->
+            L - 1
+    end.
+
+-spec count_echo(dkg(), qset()) -> non_neg_integer().
+count_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
+    Q = lists:usort(Q0),
+    length(maps:get({Leader, Q}, Elq, [])).
+
+-spec get_echo(dkg(), qset()) -> [echo()].
+get_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q) -> maps:get({Leader, Q}, Elq, []).
+
+-spec update_elq(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
+update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, Q0}=EchoMsg) ->
+    Q = lists:usort(Q0),
+    EchoForQAndLeader = maps:get({DKG#dkg.leader, Q}, Elq, []),
+    case lists:keyfind(Sender, 1, EchoForQAndLeader) of
+        false ->
+            NewDKG = DKG#dkg{elq=maps:put({DKG#dkg.leader, Q}, [{Sender, EchoMsg} | EchoForQAndLeader], Elq)},
+            {true, NewDKG};
+        _ ->
+            %% already have this echo
+            false
+    end.
+
+-spec count_ready(dkg(), qset()) -> non_neg_integer().
+count_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
+    Q = lists:usort(Q0),
+    length(maps:get({Leader, Q}, Rlq, [])).
+
+-spec get_ready(dkg(), qset()) -> [ready()].
+get_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q) -> maps:get({Leader, Q}, Rlq, []).
+
+-spec update_rlq(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
+update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
+    Q = lists:usort(Q0),
+    ReadyForQAndLeader = maps:get({DKG#dkg.leader, Q}, Rlq, []),
+    case lists:keyfind(Sender, 1, ReadyForQAndLeader) of
+        false ->
+            NewDKG = DKG#dkg{rlq=maps:put({DKG#dkg.leader, Q}, [{Sender, ReadyMsg} | ReadyForQAndLeader], Rlq)},
+            {true, NewDKG};
+        _ ->
+            %% already have this echo
+            false
+    end.
+
+-spec count_leader_change(dkg()) -> non_neg_integer().
+count_leader_change(DKG) -> length(lists:flatten(maps:keys(DKG#dkg.lc_map))).
+
+-spec store_leader_change(dkg(), pos_integer(), signed_leader_change()) -> {true, dkg()} | false.
+store_leader_change(DKG, Sender, {signed_leader_change, Lbar, _, _}=LeaderChangeMsg) ->
+    L = maps:get(Lbar, DKG#dkg.lc_map, []),
+    case lists:keyfind(Sender, 1, L) of
+        false ->
+            NewLCM = maps:put(Lbar, lists:keystore(Sender, 1, L, {Sender, LeaderChangeMsg}), DKG#dkg.lc_map),
+            {true, DKG#dkg{lc_map=NewLCM}};
+        _ ->
+            false
+    end.
