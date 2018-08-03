@@ -494,20 +494,24 @@ deserialize(#serialized_dkg{id=Id,
 
 -spec serialize_vss_map(vss_map()) -> serialized_vss_map().
 serialize_vss_map(VSSMap) ->
-    maps:map(fun(_K, VSS) -> dkg_hybridvss:serialize(VSS) end, VSSMap).
+    maps:fold(fun(K, VSS, Acc) ->
+                      maps:put(K, dkg_hybridvss:serialize(VSS), Acc)
+              end, #{}, VSSMap).
 
 -spec deserialize_vss_map(serialized_vss_map(), erlang_pbc:element(), erlang_pbc:element()) -> vss_map().
 deserialize_vss_map(SerializedVSSMap, U, U2) ->
-    maps:map(fun(_K, VSS) -> dkg_hybridvss:deserialize(VSS, U, U2) end, SerializedVSSMap).
+    maps:fold(fun(K, VSS, Acc) ->
+                      maps:put(K, dkg_hybridvss:deserialize(VSS, U, U2), Acc)
+              end, #{}, SerializedVSSMap).
 
 -spec serialize_vss_results(vss_results()) -> serialized_vss_results().
 serialize_vss_results(VSSResults) ->
-    maps:map(fun(_K, {C, Si}) ->
-                     {dkg_commitment:serialize(C), erlang_pbc:element_to_binary(Si)}
-             end, VSSResults).
+    maps:fold(fun(K, {C, Si}, Acc) ->
+                      maps:put(K, {dkg_commitment:serialize(C), erlang_pbc:element_to_binary(Si)}, Acc)
+              end, #{}, VSSResults).
 
 -spec deserialize_vss_results(serialized_vss_results(), erlang_pbc:element()) -> vss_results().
 deserialize_vss_results(SerializedVSSResults, U) ->
-    maps:map(fun(_K, {C, Si}) ->
-                     {dkg_commitment:deserialize(C, U), erlang_pbc:binary_to_element(U, Si)}
-             end, SerializedVSSResults).
+    maps:fold(fun(K, {C, Si}, Acc) ->
+                      maps:put(K, {dkg_commitment:deserialize(C, U), erlang_pbc:binary_to_element(U, Si)}, Acc)
+              end, #{}, SerializedVSSResults).
