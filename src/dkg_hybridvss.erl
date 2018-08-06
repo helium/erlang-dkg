@@ -5,7 +5,7 @@
 -export([input/2,
          commitment/1,
          serialize/1,
-         deserialize/3
+         deserialize/2
         ]).
 
 -export([handle_msg/3]).
@@ -222,7 +222,7 @@ serialize(#vss{id=Id,
                     readies=Readies,
                     commitment=dkg_commitment:serialize(Commitment)}.
 
--spec deserialize(serialized_vss(), erlang_pbc:element(), erlang_pbc:element()) -> vss().
+-spec deserialize(serialized_vss(), erlang_pbc:element()) -> vss().
 deserialize(#serialized_vss{id=Id,
                             n=N,
                             f=F,
@@ -234,18 +234,16 @@ deserialize(#serialized_vss{id=Id,
                             received_commitment=ReceivedCommitment,
                             echoes=Echoes,
                             readies=Readies,
-                            %% XXX: Only one element is enough? Given that they maybe asymmetric
-                            %% presumably we need to generate U and U2 separately to deserialize? Not sure...
-                            commitment=SerializedCommitment}, U, U2) ->
+                            commitment=SerializedCommitment}, Element) ->
     #vss{id=Id,
          n=N,
          f=F,
          t=T,
-         u=erlang_pbc:binary_to_element(U, SerializedU),
-         u2=erlang_pbc:binary_to_element(U2, SerializedU2),
+         u=erlang_pbc:binary_to_element(Element, SerializedU),
+         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
          session=Session,
          sent_echo=SentEcho,
          received_commitment=ReceivedCommitment,
          echoes=Echoes,
          readies=Readies,
-         commitment=dkg_commitment:deserialize(SerializedCommitment, U)}.
+         commitment=dkg_commitment:deserialize(SerializedCommitment, Element)}.

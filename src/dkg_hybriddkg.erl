@@ -3,7 +3,7 @@
 -export([init/7,
          start/1,
          serialize/1,
-         deserialize/3
+         deserialize/2
         ]).
 
 -export([handle_msg/3]).
@@ -452,7 +452,7 @@ serialize(#dkg{id=Id,
                     l_next=LNext,
                     lc_map=LCMap}.
 
--spec deserialize(serialized_dkg(), erlang_pbc:element(), erlang_pbc:element()) -> dkg().
+-spec deserialize(serialized_dkg(), erlang_pbc:element()) -> dkg().
 deserialize(#serialized_dkg{id=Id,
                             n=N,
                             f=F,
@@ -472,15 +472,15 @@ deserialize(#serialized_dkg{id=Id,
                             l_next=LNext,
                             %% XXX: Only one element is enough?
                             %% presumably we need to generate U and U2 again to deserialize? Not sure...
-                            lc_map=LCMap}, U, U2) ->
+                            lc_map=LCMap}, Element) ->
     #dkg{id=Id,
          n=N,
          f=F,
          t=T,
-         u=erlang_pbc:binary_to_element(U, SerializedU),
-         u2=erlang_pbc:binary_to_element(U2, SerializedU2),
-         vss_map=deserialize_vss_map(SerializedVSSMap, U, U2),
-         vss_results=deserialize_vss_results(SerializedVSSResults, U),
+         u=erlang_pbc:binary_to_element(Element, SerializedU),
+         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
+         vss_map=deserialize_vss_map(SerializedVSSMap, Element),
+         vss_results=deserialize_vss_results(SerializedVSSResults, Element),
          qbar=Qbar,
          qhat=Qhat,
          rhat=Rhat,
@@ -498,10 +498,10 @@ serialize_vss_map(VSSMap) ->
                       maps:put(K, dkg_hybridvss:serialize(VSS), Acc)
               end, #{}, VSSMap).
 
--spec deserialize_vss_map(serialized_vss_map(), erlang_pbc:element(), erlang_pbc:element()) -> vss_map().
-deserialize_vss_map(SerializedVSSMap, U, U2) ->
+-spec deserialize_vss_map(serialized_vss_map(), erlang_pbc:element()) -> vss_map().
+deserialize_vss_map(SerializedVSSMap, Element) ->
     maps:fold(fun(K, VSS, Acc) ->
-                      maps:put(K, dkg_hybridvss:deserialize(VSS, U, U2), Acc)
+                      maps:put(K, dkg_hybridvss:deserialize(VSS, Element), Acc)
               end, #{}, SerializedVSSMap).
 
 -spec serialize_vss_results(vss_results()) -> serialized_vss_results().
