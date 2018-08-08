@@ -1,13 +1,5 @@
 -module(dkg_commitment).
 
--record(commitment, {
-          matrix :: dkg_commitmentmatrix:matrix(),
-          generator :: erlang_pbc:element(),
-          nodes = [] :: [pos_integer()],
-          echoes= #{} :: map(),
-          readies=#{} :: map()
-         }).
-
 -export([new/3,
          cmp/2,
          mul/2,
@@ -20,12 +12,31 @@
          num_echoes/1,
          num_readies/1,
          matrix/1,
-         set_matrix/2
+         set_matrix/2,
+         serialize/1,
+         deserialize/2
         ]).
 
--type commitment() :: #commitment{}.
+-record(commitment, {
+          matrix :: dkg_commitmentmatrix:matrix(),
+          generator :: erlang_pbc:element(),
+          nodes = [] :: [pos_integer()],
+          echoes = #{} :: map(),
+          readies =#{} :: map()
+         }).
 
--export_type([commitment/0]).
+-record(serialized_commitment, {
+          matrix :: dkg_commitmentmatrix:serialized_matrix(),
+          generator :: binary(),
+          nodes = [] :: [pos_integer()],
+          echoes = #{} :: map(),
+          readies = #{} :: map()
+         }).
+
+-type commitment() :: #commitment{}.
+-type serialized_commitment() :: #serialized_commitment{}.
+
+-export_type([commitment/0, serialized_commitment/0]).
 
 -spec new([pos_integer(),...], erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> commitment().
 new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
@@ -111,3 +122,27 @@ matrix(#commitment{matrix=Matrix}) ->
 -spec set_matrix(commitment(), dkg_commitmentmatrix:matrix()) -> commitment().
 set_matrix(C = #commitment{}, Matrix) ->
     C#commitment{matrix=Matrix}.
+
+-spec serialize(commitment()) -> serialized_commitment().
+serialize(#commitment{matrix=Matrix,
+                      generator=Generator,
+                      nodes=Nodes,
+                      echoes=Echoes,
+                      readies=Readies}) ->
+    #serialized_commitment{matrix=dkg_commitmentmatrix:serialize(Matrix),
+                           generator=erlang_pbc:element_to_binary(Generator),
+                           nodes=Nodes,
+                           echoes=Echoes,
+                           readies=Readies}.
+
+-spec deserialize(serialized_commitment(), erlang_pbc:element()) -> commitment().
+deserialize(#serialized_commitment{matrix=SerializedMatrix,
+                                   generator=SerializedGenerator,
+                                   nodes=Nodes,
+                                   echoes=Echoes,
+                                   readies=Readies}, U) ->
+    #commitment{matrix=dkg_commitmentmatrix:deserialize(SerializedMatrix, U),
+                generator=erlang_pbc:binary_to_element(U, SerializedGenerator),
+                nodes=Nodes,
+                echoes=Echoes,
+                readies=Readies}.

@@ -111,7 +111,7 @@ serialize(Matrix) ->
                       insert([I, J], Acc, erlang_pbc:element_to_binary(lookup([I,J], Acc)))
               end, Matrix, iter(Matrix)).
 
--spec deserialize(matrix(), erlang_pbc:element()) -> matrix().
+-spec deserialize(serialized_matrix(), erlang_pbc:element()) -> matrix().
 deserialize(Matrix, U) ->
     lists:foldl(fun({I, J}, Acc) ->
                       insert([I, J], Acc, erlang_pbc:binary_to_element(U, lookup([I,J], Acc)))
