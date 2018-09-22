@@ -152,7 +152,7 @@ handle_msg(VSS=#vss{echoes=Echoes, id=Id, n=N, t=T, session=Session}, Sender, {e
 %%                 send the message (Pd, τ, ready, C, a(j)) to Pj
 %%     else if rC = n − t − f then
 %%         si ← a(0); output (Pd , τ, out, shared, C, si )
-handle_msg(VSS=#vss{readies=Readies, n=N, t=T, f=F, id=Id, commitment=Commitment}, Sender, {ready, {Session, SerializedCommitmentMatrix0, SA}}=ReadyMsg) ->
+handle_msg(VSS=#vss{readies=Readies, n=N, t=T, f=F, id=Id}, Sender, {ready, {Session, SerializedCommitmentMatrix0, SA}}=ReadyMsg) ->
     CommitmentMatrix0 = dkg_commitmentmatrix:deserialize(SerializedCommitmentMatrix0, VSS#vss.u),
     A = erlang_pbc:binary_to_element(VSS#vss.u, SA),
     case dkg_commitmentmatrix:verify_point(VSS#vss.u2, CommitmentMatrix0, Sender, Id, A) of
