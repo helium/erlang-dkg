@@ -521,7 +521,7 @@ deserialize_vss_results(SerializedVSSResults, U) ->
 status(DKG) ->
     #{id => DKG#dkg.id,
       vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
-      vss_results => maps:map(fun(_K, {C, Si}) -> {dkg_commitment:status(C), erlang_pbc:element_to_binary(Si)} end, DKG#dkg.vss_results),
+      vss_results_from => maps:keys(DKG#dkg.vss_results),
       echoes_from => maps:keys(DKG#dkg.elq),
       readies_from => maps:keys(DKG#dkg.rlq),
       lc_flag => DKG#dkg.lc_flag,
