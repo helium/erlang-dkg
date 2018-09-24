@@ -522,13 +522,8 @@ status(DKG) ->
     #{id => DKG#dkg.id,
       vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
       vss_results => maps:map(fun(_K, {C, Si}) -> {dkg_commitment:status(C), erlang_pbc:element_to_binary(Si)} end, DKG#dkg.vss_results),
-      qbar => DKG#dkg.qbar,
-      qhat => DKG#dkg.qhat,
-      rhat => DKG#dkg.rhat,
-      mbar => DKG#dkg.mbar,
-      elq => DKG#dkg.elq,
-      rlq => DKG#dkg.rlq,
+      echoes_from => maps:keys(DKG#dkg.elq),
+      readies_from => maps:keys(DKG#dkg.rlq),
       lc_flag => DKG#dkg.lc_flag,
       leader => DKG#dkg.leader,
-      l_next => DKG#dkg.l_next,
-      lc_map => DKG#dkg.lc_map}.
+      l_next => DKG#dkg.l_next}.

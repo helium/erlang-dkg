@@ -265,7 +265,6 @@ status(VSS) ->
       session => VSS#vss.session,
       sent_echo => VSS#vss.sent_echo,
       received_commitment => VSS#vss.received_commitment,
-      echoes => VSS#vss.echoes,
-      readies => VSS#vss.readies,
-      commitment => dkg_commitment:status(VSS#vss.commitment)
+      echoes_from => maps:keys(VSS#vss.echoes),
+      readies_from => maps:keys(VSS#vss.readies)
      }.
