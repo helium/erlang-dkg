@@ -3,7 +3,8 @@
 -export([init/7,
          start/1,
          serialize/1,
-         deserialize/2
+         deserialize/2,
+         status/1
         ]).
 
 -export([handle_msg/3]).
@@ -515,3 +516,19 @@ deserialize_vss_results(SerializedVSSResults, U) ->
     maps:fold(fun(K, {C, Si}, Acc) ->
                       maps:put(K, {dkg_commitment:deserialize(C, U), erlang_pbc:binary_to_element(U, Si)}, Acc)
               end, #{}, SerializedVSSResults).
+
+-spec status(dkg()) -> map().
+status(DKG) ->
+    #{id => DKG#dkg.id,
+      vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
+      vss_results => maps:map(fun(_K, {C, Si}) -> {dkg_commitment:status(C), erlang_pbc:element_to_binary(Si)} end, DKG#dkg.vss_results),
+      qbar => DKG#dkg.qbar,
+      qhat => DKG#dkg.qhat,
+      rhat => DKG#dkg.rhat,
+      mbar => DKG#dkg.mbar,
+      elq => DKG#dkg.elq,
+      rlq => DKG#dkg.rlq,
+      lc_flag => DKG#dkg.lc_flag,
+      leader => DKG#dkg.leader,
+      l_next => DKG#dkg.l_next,
+      lc_map => DKG#dkg.lc_map}.

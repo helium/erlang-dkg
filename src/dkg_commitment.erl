@@ -14,7 +14,8 @@
          matrix/1,
          set_matrix/2,
          serialize/1,
-         deserialize/2
+         deserialize/2,
+         status/1
         ]).
 
 -record(commitment, {

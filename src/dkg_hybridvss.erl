@@ -5,7 +5,8 @@
 -export([input/2,
          commitment/1,
          serialize/1,
-         deserialize/2
+         deserialize/2,
+         status/1
         ]).
 
 -export([handle_msg/3]).
@@ -257,3 +258,14 @@ deserialize(#serialized_vss{id=Id,
          received_commitment=ReceivedCommitment,
          readies=Readies,
          commitment=dkg_commitment:deserialize(SerializedCommitment, Element)}.
+
+-spec status(vss()) -> map().
+status(VSS) ->
+    #{id => VSS#vss.id,
+      session => VSS#vss.session,
+      sent_echo => VSS#vss.sent_echo,
+      received_commitment => VSS#vss.received_commitment,
+      echoes => VSS#vss.echoes,
+      readies => VSS#vss.readies,
+      commitment => dkg_commitment:status(VSS#vss.commitment)
+     }.
