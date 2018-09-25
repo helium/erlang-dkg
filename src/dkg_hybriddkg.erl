@@ -523,7 +523,9 @@ status(DKG) ->
       vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
       vss_results_from => maps:keys(DKG#dkg.vss_results),
       echoes_from => maps:keys(DKG#dkg.elq),
+      echoes_received => maps:map(fun(_K, V) -> length(maps:values(V)) end, DKG#dkg.elq),
       readies_from => maps:keys(DKG#dkg.rlq),
+      readies_received => maps:map(fun(_K, V) -> length(maps:values(V)) end, DKG#dkg.rlq),
       lc_flag => DKG#dkg.lc_flag,
       leader => DKG#dkg.leader,
       l_next => DKG#dkg.l_next}.
