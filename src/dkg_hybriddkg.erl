@@ -365,7 +365,9 @@ count_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
     length(maps:get({Leader, Q}, Elq, [])).
 
 -spec get_echo(dkg(), qset()) -> [echo()].
-get_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q) -> maps:get({Leader, Q}, Elq, []).
+get_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
+    Q = lists:usort(Q0),
+    maps:get({Leader, Q}, Elq, []).
 
 -spec update_elq(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
 update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, Q0}=EchoMsg) ->
@@ -386,7 +388,9 @@ count_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
     length(maps:get({Leader, Q}, Rlq, [])).
 
 -spec get_ready(dkg(), qset()) -> [ready()].
-get_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q) -> maps:get({Leader, Q}, Rlq, []).
+get_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
+    Q = lists:usort(Q0),
+    maps:get({Leader, Q}, Rlq, []).
 
 -spec update_rlq(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
 update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
@@ -522,10 +526,22 @@ status(DKG) ->
     #{id => DKG#dkg.id,
       vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
       vss_results_from => maps:keys(DKG#dkg.vss_results),
-      echoes_from => maps:keys(DKG#dkg.elq),
-      echoes_received => maps:map(fun(_K, V) -> length(maps:values(V)) end, DKG#dkg.elq),
-      readies_from => maps:keys(DKG#dkg.rlq),
-      readies_received => maps:map(fun(_K, V) -> length(maps:values(V)) end, DKG#dkg.rlq),
+      echoes_required => ceil(( DKG#dkg.n + DKG#dkg.t + 1 )/2),
+      echoes_detail => maps:map(fun(_K, Echoes) ->
+                                        lists:foldl(fun({Sender, {signed_echo, Q}}, Acc) ->
+                                                            [#{sender => Sender,
+                                                               echo_count => count_echo(DKG, Q),
+                                                               echo => lists:sort([X || {X, _} <- get_echo(DKG, Q)])} | Acc]
+                                                    end, [], Echoes)
+                                end, DKG#dkg.elq),
+      readies_details => maps:map(fun(_K, Readies) ->
+                                          lists:foldl(fun({Sender, {signed_ready, Q}}, Acc) ->
+                                                              [#{sender => Sender,
+                                                                 ready_count => count_ready(DKG, Q),
+                                                                 ready => lists:sort([X || {X, _} <- get_ready(DKG, Q)])} | Acc]
+                                                      end, [], Readies)
+                                  end, DKG#dkg.rlq),
+      readies_required => (DKG#dkg.t + 1),
       lc_flag => DKG#dkg.lc_flag,
       leader => DKG#dkg.leader,
       l_next => DKG#dkg.l_next}.

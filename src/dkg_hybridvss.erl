@@ -21,6 +21,7 @@
             u2 :: erlang_pbc:element(),
             session :: session(),
             sent_echo = false :: boolean(),
+            sent_ready = false :: boolean(),
             received_commitment = false :: boolean(),
             readies = #{} :: readies(),
             commitment :: dkg_commitment:commitment()
@@ -36,6 +37,7 @@
             u2 :: binary(),
             session :: session(),
             sent_echo = false :: boolean(),
+            sent_ready = false :: boolean(),
             received_commitment = false :: boolean(),
             readies = #{} :: readies(),
             commitment :: dkg_commitment:serialized_commitment()
@@ -133,7 +135,7 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session}, Sender, {echo, {Session, 
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, Subshares))}}}
                                              end, dkg_util:allnodes(N)),
-                            NewVSS = VSS#vss{commitment=NewCommitment, received_commitment=true},
+                            NewVSS = VSS#vss{commitment=NewCommitment, sent_ready=true, received_commitment=true},
                             {NewVSS, {send, Msgs}};
                         false ->
                             NewVSS = VSS#vss{ commitment=NewCommitment, received_commitment=true},
@@ -218,8 +220,10 @@ serialize(#vss{id=Id,
                t=T,
                u=U,
                u2=U2,
+               done=Done,
                session=Session,
                sent_echo=SentEcho,
+               sent_ready=SentReady,
                received_commitment=ReceivedCommitment,
                readies=Readies,
                commitment=Commitment}) ->
@@ -229,8 +233,10 @@ serialize(#vss{id=Id,
                     t=T,
                     u=erlang_pbc:element_to_binary(U),
                     u2=erlang_pbc:element_to_binary(U2),
+                    done=Done,
                     session=Session,
                     sent_echo=SentEcho,
+                    sent_ready=SentReady,
                     received_commitment=ReceivedCommitment,
                     readies=Readies,
                     commitment=dkg_commitment:serialize(Commitment)}.
@@ -242,8 +248,10 @@ deserialize(#serialized_vss{id=Id,
                             t=T,
                             u=SerializedU,
                             u2=SerializedU2,
+                            done=Done,
                             session=Session,
                             sent_echo=SentEcho,
+                            sent_ready=SentReady,
                             received_commitment=ReceivedCommitment,
                             readies=Readies,
                             commitment=SerializedCommitment}, Element) ->
@@ -253,8 +261,10 @@ deserialize(#serialized_vss{id=Id,
          t=T,
          u=erlang_pbc:binary_to_element(Element, SerializedU),
          u2=erlang_pbc:binary_to_element(Element, SerializedU2),
+         done=Done,
          session=Session,
          sent_echo=SentEcho,
+         sent_ready=SentReady,
          received_commitment=ReceivedCommitment,
          readies=Readies,
          commitment=dkg_commitment:deserialize(SerializedCommitment, Element)}.
@@ -264,7 +274,11 @@ status(VSS) ->
     #{id => VSS#vss.id,
       session => VSS#vss.session,
       sent_echo => VSS#vss.sent_echo,
+      sent_ready => VSS#vss.sent_ready,
       received_commitment => VSS#vss.received_commitment,
-      echoes_from => maps:keys(VSS#vss.echoes),
-      readies_from => maps:keys(VSS#vss.readies)
+      num_echoes => dkg_commitment:num_echoes(VSS#vss.commitment),
+      num_readies => dkg_commitment:num_readies(VSS#vss.commitment),
+      echoes => maps:keys(dkg_commitment:echoes(VSS#vss.commitment)),
+      readies => maps:keys(dkg_commitment:readies(VSS#vss.commitment)),
+      done => VSS#vss.done
      }.
