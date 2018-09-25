@@ -11,6 +11,8 @@
          add_ready/3,
          num_echoes/1,
          num_readies/1,
+         echoes/1,
+         readies/1,
          matrix/1,
          set_matrix/2,
          serialize/1,
@@ -114,6 +116,14 @@ num_echoes(#commitment{echoes=Echoes}) ->
 -spec num_readies(commitment()) -> non_neg_integer().
 num_readies(#commitment{readies=Readies}) ->
     maps:size(Readies).
+
+-spec echoes(commitment()) -> #{pos_integer() => erlang_pbc:element()}.
+echoes(#commitment{echoes=Echoes}) ->
+    Echoes.
+
+-spec readies(commitment()) -> #{pos_integer() => erlang_pbc:element()}.
+readies(#commitment{readies=Readies}) ->
+    Readies.
 
 -spec matrix(commitment()) -> dkg_commitmentmatrix:matrix().
 matrix(#commitment{matrix=Matrix}) ->
