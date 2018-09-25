@@ -37,7 +37,7 @@
           u :: binary(),
           u2 :: binary(),
           vss_map :: #{pos_integer() => dkg_hybridvss:serialized_vss()},
-          vss_results = #{} :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}},
+          vss_results = #{} :: serialized_vss_results(),
           qbar = [] :: qset(),
           qhat = [] :: qset(),
           rhat = [] :: rhat(),
