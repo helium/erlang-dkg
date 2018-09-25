@@ -78,12 +78,12 @@ dispatch({NewDKG, {result, {Shard, VerificationKey, VerificationKeys}}}, State) 
     %ct:pal("~p finished", [State#state.id]),
     PubKey = tpke_pubkey:init(State#state.n, State#state.t, State#state.g1, State#state.g2, VerificationKey, VerificationKeys, State#state.curve),
     PrivKey = tpke_privkey:init(PubKey, Shard, State#state.id - 1),
-    State#state{privkey=PrivKey, dkg=NewDKG};
+    update_dkg(NewDKG, State#state{privkey=PrivKey});
 dispatch({NewDKG, {send, ToSend}}, State) ->
     do_send(ToSend, State),
-    State#state{dkg=NewDKG};
+    update_dkg(NewDKG, State);
 dispatch({NewDKG, ok}, State) ->
-    State#state{dkg=NewDKG};
+    update_dkg(NewDKG, State);
 dispatch({NewDKG, Other}, State) ->
     io:format("UNHANDLED ~p~n", [Other]),
     State#state{dkg=NewDKG};
@@ -101,8 +101,11 @@ do_send([{multicast, Msg}|T], State) ->
     [ gen_server:cast({global, name(Dest)}, {dkg, State#state.id, Msg}) || Dest <- lists:seq(1, State#state.n)],
     do_send(T, State).
 
-
 %% helper functions
+update_dkg(DKG, State)->
+    NewDKG = dkg_hybriddkg:deserialize(dkg_hybriddkg:serialize(DKG), State#state.g1),
+    State#state{dkg=NewDKG}.
+
 name(N) ->
     list_to_atom(lists:flatten(["dkg_worker_", integer_to_list(N)])).
 

@@ -21,16 +21,16 @@
           matrix :: dkg_commitmentmatrix:matrix(),
           generator :: erlang_pbc:element(),
           nodes = [] :: [pos_integer()],
-          echoes = #{} :: map(),
-          readies =#{} :: map()
+          echoes = #{} :: #{pos_integer() => erlang_pbc:element()},
+          readies =#{} :: #{pos_integer() => erlang_pbc:element()}
          }).
 
 -record(serialized_commitment, {
           matrix :: dkg_commitmentmatrix:serialized_matrix(),
           generator :: binary(),
           nodes = [] :: [pos_integer()],
-          echoes = #{} :: map(),
-          readies = #{} :: map()
+          echoes = #{} :: #{pos_integer() => binary()},
+          readies = #{} :: #{pos_integer() => binary()}
          }).
 
 -type commitment() :: #commitment{}.
@@ -132,8 +132,8 @@ serialize(#commitment{matrix=Matrix,
     #serialized_commitment{matrix=dkg_commitmentmatrix:serialize(Matrix),
                            generator=erlang_pbc:element_to_binary(Generator),
                            nodes=Nodes,
-                           echoes=Echoes,
-                           readies=Readies}.
+                           echoes=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Echoes),
+                           readies=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Readies)}.
 
 -spec deserialize(serialized_commitment(), erlang_pbc:element()) -> commitment().
 deserialize(#serialized_commitment{matrix=SerializedMatrix,
@@ -144,5 +144,5 @@ deserialize(#serialized_commitment{matrix=SerializedMatrix,
     #commitment{matrix=dkg_commitmentmatrix:deserialize(SerializedMatrix, U),
                 generator=erlang_pbc:binary_to_element(U, SerializedGenerator),
                 nodes=Nodes,
-                echoes=Echoes,
-                readies=Readies}.
+                echoes=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Echoes),
+                readies=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Readies)}.
