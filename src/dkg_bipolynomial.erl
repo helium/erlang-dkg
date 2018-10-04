@@ -13,15 +13,19 @@
          serialize/1,
          deserialize/2]).
 
--type row() :: {erlang_pbc:element(), erlang_pbc:element(), erlang_pbc:element()}.
--type bipolynomial() :: {row(), row(), row()}.
+-record(bipolynomial, {
+          t :: non_neg_integer(),
+          elements :: [erlang_pbc:element(), ...]
+         }).
+
+-type bipolynomial() :: #bipolynomial{}.
 
 -export_type([bipolynomial/0]).
 
 -spec generate(erlang_pbc:element(), pos_integer()) -> bipolynomial().
 %% generate a bivariate polynomial of degree T
 generate(Pairing, T) ->
-    lists:foldl(fun(I, Acc) ->
+    R = lists:foldl(fun(I, Acc) ->
                         RandCoeff = erlang_pbc:element_random(erlang_pbc:element_new('Zr', Pairing)),
                         NewAcc = setelement(I+1, Acc, erlang:append_element(element(I+1, Acc), RandCoeff)),
                         lists:foldl(fun(J, Acc2) ->
@@ -31,7 +35,8 @@ generate(Pairing, T) ->
                                                                   erlang:append_element(element(J+1, Acc2), RandCoeff2)),
                                                        erlang:append_element(element(I+1, Acc2), RandCoeff2))
                                     end, NewAcc, lists:seq(I+1, T))
-                end, list_to_tuple(lists:duplicate(T+1, {})), lists:seq(0, T)).
+                end, list_to_tuple(lists:duplicate(T+1, {})), lists:seq(0, T)),
+    #bipolynomial{t=T, elements=lists:flatten([ tuple_to_list(E) || E <- tuple_to_list(R)])}.
 
 %% generate a bivariate polynomial of degree T with a fixed term
 -spec generate(erlang_pbc:element(), pos_integer(), erlang_pbc:element() | integer()) -> bipolynomial().
@@ -47,12 +52,12 @@ sub(PolyA, PolyB) ->
     merge(PolyA, PolyB, fun erlang_pbc:element_sub/2).
 
 -spec is_zero(bipolynomial()) -> boolean().
-is_zero(Poly) ->
-    tuple_size(Poly) == 0.
+is_zero(#bipolynomial{t=T}) ->
+    T == 0.
 
 -spec degree(bipolynomial()) -> non_neg_integer().
-degree(Poly) ->
-    tuple_size(Poly) - 1.
+degree(#bipolynomial{t=T}) ->
+    T.
 
 -spec cmp(bipolynomial(), bipolynomial()) -> boolean().
 cmp(PolyA, PolyB) ->
@@ -72,14 +77,14 @@ evaluate(Poly, X) ->
     %% go in reverse for coefficient rows
     lists:foldl(fun(Row, Acc) ->
                         Temp = dkg_polynomial:mul(Acc, PolyX),
-                        dkg_polynomial:add(Temp, tuple_to_list(Row))
-                end, Result, lists:reverse(tuple_to_list(Poly))).
+                        dkg_polynomial:add(Temp, Row)
+                end, Result, lists:reverse(rows(Poly))).
 
 -spec print(bipolynomial()) -> any().
 print(Poly) ->
     list_to_tuple(lists:map(fun(R) ->
-                                    list_to_tuple([ erlang_pbc:element_to_string(X) || X <- tuple_to_list(R)])
-                            end, tuple_to_list(Poly))).
+                                    list_to_tuple([ erlang_pbc:element_to_string(X) || X <- R])
+                            end, rows(Poly))).
 
 -spec merge(bipolynomial(), bipolynomial(), fun()) -> bipolynomial().
 merge(PolyA, PolyB, MergeFun) ->
@@ -109,42 +114,37 @@ expand(Poly, Degree, Padding) ->
         true ->
             Poly;
         false ->
-            list_to_tuple(lists:map(fun(R) ->
-                                            pad_row(R, Degree, Padding)
-                                    end, tuple_to_list(Poly)) ++ lists:duplicate(Degree - degree(Poly), list_to_tuple(lists:duplicate(Degree+1, Padding))))
+            ExtraRows = lists:duplicate((Degree+1 - degree(Poly)+1)*(Degree+1), Padding),
+            Elements = lists:flatten([ R ++ lists:duplicate(Degree - degree(Poly), Padding) || R <- rows(Poly) ] ++ ExtraRows),
+            #bipolynomial{t=Degree, elements=Elements}
     end.
 
-pad_row(R, Degree, Padding) ->
-    case tuple_size(R) - 1 == Degree of
-        true -> R;
-        false ->
-            pad_row(erlang:append_element(R, Padding), Degree, Padding)
-    end.
-
-prune(Poly) ->
+prune(Poly = #bipolynomial{t=T}) ->
     %% we need to find the minimum degree needed to represent this polynomial
     %% essentially this means how many rows and columns can we prune of zeros
     %% while keeping the matrix square
     Width = lists:foldl(fun(Row, MaxWidth) ->
-                                W = length(lists:dropwhile(fun erlang_pbc:element_is0/1, lists:reverse(tuple_to_list(Row)))),
+                                W = length(lists:dropwhile(fun erlang_pbc:element_is0/1, lists:reverse(Row))),
                                 max(W, MaxWidth)
-                        end, 0, tuple_to_list(Poly)),
+                        end, 0, rows(Poly)),
     %% find how many trailing rows are empty and use that to calculate the minimum height
-    Height = tuple_size(Poly) - length(lists:takewhile(fun(Row) ->
-                                                               lists:all(fun erlang_pbc:element_is0/1, tuple_to_list(Row))
-                                                       end, lists:reverse(tuple_to_list(Poly)))),
+    Height = T+1 - length(lists:takewhile(fun(Row) ->
+                                                  lists:all(fun erlang_pbc:element_is0/1, Row)
+                                          end, lists:reverse(rows(Poly)))),
 
     NewDimension = max(Height, Width),
-    HeightAdjustedPoly = lists:sublist(tuple_to_list(Poly), NewDimension),
-    list_to_tuple(lists:map(fun(Row) ->
-                                    list_to_tuple(lists:sublist(tuple_to_list(Row), NewDimension))
-                            end, HeightAdjustedPoly)).
+    Rows = lists:sublist(rows(Poly), NewDimension),
+    Elements = lists:map(fun(Row) ->
+                                 lists:sublist(Row, NewDimension)
+                         end, Rows),
+    #bipolynomial{t=NewDimension-1, elements=lists:flatten(Elements)}.
 
-lookup([Row, Col], Poly) ->
-    element(Col, element(Row, Poly)).
+lookup([Row, Col], #bipolynomial{t=T, elements=Elements}) ->
+    lists:nth(((Row-1)*(T+1)) + Col, Elements).
 
-insert([Row, Col], Poly, Val) ->
-    setelement(Row, Poly, setelement(Col, element(Row, Poly), Val)).
+insert([Row, Col], BiPoly = #bipolynomial{t=T, elements=Elements}, Val) ->
+    {Head, [_|Tail]} = lists:split(((Row-1)*(T+1)) + Col - 1, Elements),
+    BiPoly#bipolynomial{elements = Head ++ [Val | Tail]}.
 
 serialize(BiPoly) ->
     Degree = degree(BiPoly),
@@ -157,3 +157,12 @@ deserialize(BiPoly, Element) ->
     lists:foldl(fun({Row, Col}, Acc) ->
                         insert([Row, Col], Acc, erlang_pbc:binary_to_element(Element, lookup([Row, Col], Acc)))
                 end, BiPoly, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]).
+
+rows(#bipolynomial{t=T, elements=Elements}) ->
+    rows(T, Elements, []).
+
+rows(_, [], Acc) ->
+    lists:reverse(Acc);
+rows(T, Elements, Acc) ->
+    {Row, Rest} = lists:split(T+1, Elements),
+    rows(T, Rest, [Row|Acc]).
