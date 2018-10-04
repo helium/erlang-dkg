@@ -14,8 +14,8 @@
          deserialize/2]).
 
 -record(bipolynomial, {
-          t :: non_neg_integer(),
-          elements :: [erlang_pbc:element(), ...]
+          t :: -1 | non_neg_integer(),
+          elements :: [erlang_pbc:element()]
          }).
 
 -type bipolynomial() :: #bipolynomial{}.
@@ -146,17 +146,11 @@ insert([Row, Col], BiPoly = #bipolynomial{t=T, elements=Elements}, Val) ->
     {Head, [_|Tail]} = lists:split(((Row-1)*(T+1)) + Col - 1, Elements),
     BiPoly#bipolynomial{elements = Head ++ [Val | Tail]}.
 
-serialize(BiPoly) ->
-    Degree = degree(BiPoly),
-    lists:foldl(fun({Row, Col}, Acc) ->
-                        insert([Row, Col], Acc, erlang_pbc:element_to_binary(lookup([Row, Col], Acc)))
-                end, BiPoly, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]).
+serialize(#bipolynomial{t=T, elements=Elements}) ->
+    {T, erlang_pbc:elements_to_binary(Elements)}.
 
-deserialize(BiPoly, Element) ->
-    Degree = degree(BiPoly),
-    lists:foldl(fun({Row, Col}, Acc) ->
-                        insert([Row, Col], Acc, erlang_pbc:binary_to_element(Element, lookup([Row, Col], Acc)))
-                end, BiPoly, [ {R, C} || R <- lists:seq(1, Degree+1), C <- lists:seq(1, Degree+1)]).
+deserialize({T, Binary}, Element) ->
+    #bipolynomial{t=T, elements=erlang_pbc:binary_to_elements(Element, Binary)}.
 
 rows(#bipolynomial{t=T, elements=Elements}) ->
     rows(T, Elements, []).

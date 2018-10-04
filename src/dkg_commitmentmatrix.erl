@@ -2,6 +2,7 @@
 
 -export([new/2,
          lookup/2,
+         print/1,
          cmp/2,
          mul/2,
          verify_poly/4,
@@ -11,10 +12,13 @@
          deserialize/2
         ]).
 
--type row() :: {erlang_pbc:element(), erlang_pbc:element(), erlang_pbc:element()}.
--type matrix() :: {row(), row(), row()}.
--type serialized_row() :: {binary(), binary(), binary()}.
--type serialized_matrix() :: {serialized_row(), serialized_row(), serialized_row()}.
+-record(commitmentmatrix, {
+          t :: -1 | non_neg_integer(),
+          elements :: [erlang_pbc:element()]
+         }).
+
+-type matrix() :: #commitmentmatrix{}.
+-type serialized_matrix() :: binary().
 
 -export_type([matrix/0, serialized_matrix/0]).
 
@@ -22,26 +26,34 @@
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
     One = erlang_pbc:element_set(Generator, 1),
-    list_to_tuple(lists:foldl(fun(_, Acc) ->
-                                      [list_to_tuple(lists:duplicate(T+1, One))| Acc]
-                              end, [], lists:seq(0, T)));
+    Elements = lists:foldl(fun(_, Acc) ->
+                                      [lists:duplicate(T+1, One)| Acc]
+                              end, [], lists:seq(0, T)),
+    #commitmentmatrix{t=T, elements=lists:flatten(Elements)};
 new(Generator, BiPoly) when is_tuple(BiPoly) ->
     T = dkg_bipolynomial:degree(BiPoly),
     erlang_pbc:element_pp_init(Generator),
-    list_to_tuple([ list_to_tuple([ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ])  || I <- lists:seq(0, T) ]).
+    Elements = [ [ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ]  || I <- lists:seq(0, T) ],
+    #commitmentmatrix{t=T, elements=lists:flatten(Elements)}.
 
-lookup([Row, Col], Poly) ->
-    element(Col, element(Row, Poly)).
+lookup([Row, Col], #commitmentmatrix{t=T, elements=Elements}) ->
+    lists:nth(((Row-1)*(T+1)) + Col, Elements).
 
-insert([Row, Col], Poly, Val) ->
-    setelement(Row, Poly, setelement(Col, element(Row, Poly), Val)).
+insert([Row, Col], BiPoly = #commitmentmatrix{t=T, elements=Elements}, Val) ->
+    {Head, [_|Tail]} = lists:split(((Row-1)*(T+1)) + Col - 1, Elements),
+    BiPoly#commitmentmatrix{elements = Head ++ [Val | Tail]}.
+
+print(Matrix) ->
+    list_to_tuple(lists:map(fun(R) ->
+                                    list_to_tuple([ erlang_pbc:element_to_string(X) || X <- R])
+                            end, rows(Matrix))).
 
 -spec cmp(matrix(), matrix()) -> boolean().
 cmp(MatrixA, MatrixB) ->
     lists:all(fun({I, J}) ->
                       erlang_pbc:element_cmp(lookup([I, J], MatrixA), lookup([I,J], MatrixB))
               end,
-      iter(MatrixA)).
+              iter(MatrixA)).
 
 -spec mul(matrix(), matrix()) -> matrix().
 mul(MatrixA, MatrixB) ->
@@ -106,19 +118,25 @@ public_key_share(U, Matrix, NodeID) ->
                 end, G1, lists:reverse(lists:seq(1, sz(Matrix)))).
 
 -spec serialize(matrix()) -> serialized_matrix().
-serialize(Matrix) ->
-    lists:foldl(fun({I, J}, Acc) ->
-                      insert([I, J], Acc, erlang_pbc:element_to_binary(lookup([I,J], Acc)))
-              end, Matrix, iter(Matrix)).
+serialize(#commitmentmatrix{t=T, elements=Elements}) ->
+    BinElements = erlang_pbc:elements_to_binary(Elements),
+    <<T:8/integer-signed, BinElements/binary>>.
 
 -spec deserialize(serialized_matrix(), erlang_pbc:element()) -> matrix().
-deserialize(Matrix, U) ->
-    lists:foldl(fun({I, J}, Acc) ->
-                      insert([I, J], Acc, erlang_pbc:binary_to_element(U, lookup([I,J], Acc)))
-              end, Matrix, iter(Matrix)).
+deserialize(<<T:8/integer-signed, Elements/binary>>, U) ->
+    #commitmentmatrix{t=T, elements=erlang_pbc:binary_to_elements(U, Elements)}.
 
 iter(Matrix) ->
     [ {I, J} || I <- lists:seq(1, sz(Matrix)), J <- lists:seq(1, sz(Matrix))].
 
-sz(Matrix) ->
-    tuple_size(Matrix).
+sz(#commitmentmatrix{t=T}) ->
+    T+1.
+
+rows(#commitmentmatrix{t=T, elements=Elements}) ->
+    rows(T, Elements, []).
+
+rows(_, [], Acc) ->
+    lists:reverse(Acc);
+rows(T, Elements, Acc) ->
+    {Row, Rest} = lists:split(T+1, Elements),
+    rows(T, Rest, [Row|Acc]).
