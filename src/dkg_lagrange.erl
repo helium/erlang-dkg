@@ -19,16 +19,17 @@ interpolate(Poly, Indices, Alpha) ->
 -spec coefficients(indices(), erlang_pbc:element()) -> dkg_polynomial:polynomial().
 coefficients(Indices, Alpha) ->
     One = erlang_pbc:element_set(erlang_pbc:element_new('Zr', Alpha), 1),
+    IndicesWithIndex = enumerate(Indices),
     lists:reverse(lists:foldl(fun({I, Index}, Acc1) ->
                                       Num = lists:foldl(fun(E, Acc) ->
                                                                 erlang_pbc:element_mul(Acc, E)
-                                                        end, One, [ erlang_pbc:element_sub(Idx, Alpha) || {J, Idx} <- enumerate(Indices), J /= I]),
+                                                        end, One, [ erlang_pbc:element_sub(Idx, Alpha) || {J, Idx} <- IndicesWithIndex, J /= I]),
 
                                       Den = lists:foldl(fun(E, Acc) ->
                                                                 erlang_pbc:element_mul(Acc, E)
-                                                        end, One, [ erlang_pbc:element_sub(Idx, Index)  || {J, Idx} <- enumerate(Indices), J /= I]),
+                                                        end, One, [ erlang_pbc:element_sub(Idx, Index)  || {J, Idx} <- IndicesWithIndex, J /= I]),
                                       [erlang_pbc:element_div(Num, Den) | Acc1]
-                              end, [], enumerate(Indices))).
+                              end, [], IndicesWithIndex)).
 
 -spec evaluate_g1(dkg_polynomial:polynomial(), [erlang_pbc:element(), ...]) -> erlang_pbc:element().
 evaluate_g1(Coefficients, Shares) ->

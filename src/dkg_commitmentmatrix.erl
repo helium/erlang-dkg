@@ -26,22 +26,18 @@
 new(Generator, T) when is_integer(T) ->
     %% generate an empty commitment matrix of degree T
     One = erlang_pbc:element_set(Generator, 1),
-    Elements = lists:foldl(fun(_, Acc) ->
+    Elements = lists:flatten(lists:foldl(fun(_, Acc) ->
                                       [lists:duplicate(T+1, One)| Acc]
-                              end, [], lists:seq(0, T)),
-    #commitmentmatrix{t=T, elements=lists:flatten(Elements)};
+                              end, [], lists:seq(0, T))),
+    #commitmentmatrix{t=T, elements=Elements};
 new(Generator, BiPoly) when is_tuple(BiPoly) ->
     T = dkg_bipolynomial:degree(BiPoly),
     erlang_pbc:element_pp_init(Generator),
-    Elements = [ [ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ]  || I <- lists:seq(0, T) ],
-    #commitmentmatrix{t=T, elements=lists:flatten(Elements)}.
+    Elements = lists:flatten([ [ erlang_pbc:element_pow(Generator, dkg_bipolynomial:lookup([I+1, J+1], BiPoly)) || J <- lists:seq(0, T) ]  || I <- lists:seq(0, T) ]),
+    #commitmentmatrix{t=T, elements=Elements}.
 
 lookup([Row, Col], #commitmentmatrix{t=T, elements=Elements}) ->
     lists:nth(((Row-1)*(T+1)) + Col, Elements).
-
-insert([Row, Col], BiPoly = #commitmentmatrix{t=T, elements=Elements}, Val) ->
-    {Head, [_|Tail]} = lists:split(((Row-1)*(T+1)) + Col - 1, Elements),
-    BiPoly#commitmentmatrix{elements = Head ++ [Val | Tail]}.
 
 print(Matrix) ->
     list_to_tuple(lists:map(fun(R) ->
@@ -51,9 +47,8 @@ print(Matrix) ->
 -spec cmp(matrix(), matrix()) -> boolean().
 cmp(MatrixA, MatrixB) ->
     lists:all(fun({I, J}) ->
-                      erlang_pbc:element_cmp(lookup([I, J], MatrixA), lookup([I,J], MatrixB))
-              end,
-              iter(MatrixA)).
+                      erlang_pbc:element_cmp(I, J)
+              end, lists:zip(MatrixA#commitmentmatrix.elements, MatrixB#commitmentmatrix.elements)).
 
 -spec mul(matrix(), matrix()) -> matrix().
 mul(MatrixA, MatrixB) ->
@@ -63,9 +58,10 @@ mul(MatrixA, MatrixB) ->
 
     %% run the merge function on every matrix element
     %% use a cartesian product to simplify the iteration
-    lists:foldl(fun({Row, Col}, Acc) ->
-                        insert([Row, Col], Acc, erlang_pbc:element_mul(lookup([Row, Col], MatrixA), lookup([Row, Col], MatrixB)))
-                end, MatrixA, iter(MatrixA)).
+    Elements = lists:map(fun({A, B}) ->
+                                 erlang_pbc:element_mul(A, B)
+                         end, lists:zip(MatrixA#commitmentmatrix.elements, MatrixB#commitmentmatrix.elements)),
+    #commitmentmatrix{t=MatrixA#commitmentmatrix.t, elements=Elements}.
 
 -spec verify_poly(erlang_pbc:element(), matrix(), non_neg_integer(), dkg_polynomial:polynomial()) -> boolean().
 verify_poly(U, Matrix, VerifierID, Poly) ->
@@ -74,13 +70,13 @@ verify_poly(U, Matrix, VerifierID, Poly) ->
 
     lists:foldl(fun(_L, false) ->
                         false;
-                   (L, _Acc) ->
-                        E1 = erlang_pbc:element_pow(U, lists:nth(L, Poly)),
+                   ({Row, PE}, _Acc) ->
+                        E1 = erlang_pbc:element_pow(U, PE),
                         E2 = lists:foldl(fun(J, Acc2) ->
-                                                 erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([J, L], Matrix))
-                                         end, erlang_pbc:element_set(U, 1), lists:reverse(lists:seq(1, sz(Matrix)))),
+                                                 erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
+                                         end, erlang_pbc:element_set(U, 1), lists:reverse(Row)),
                         erlang_pbc:element_cmp(E1, E2)
-                end, true, lists:seq(1, length(Poly))).
+                end, true, lists:zip(rows(Matrix), Poly)).
 
 -spec verify_point(erlang_pbc:element(), matrix(), non_neg_integer(), non_neg_integer(), erlang_pbc:element()) -> boolean().
 verify_point(U, Matrix, SenderID, VerifierID, Point) ->
@@ -90,13 +86,13 @@ verify_point(U, Matrix, SenderID, VerifierID, Point) ->
     erlang_pbc:element_pp_init(G1),
 
     Ga = erlang_pbc:element_pow(U, Point),
-    Res = lists:foldl(fun(II, Acc) ->
+    Res = lists:foldl(fun(Row, Acc) ->
                               R = erlang_pbc:element_pow(Acc, M),
-                              Row = lists:foldl(fun(J, Acc2) ->
-                                                        erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                                end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
-                              erlang_pbc:element_mul(R, Row)
-                      end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
+                              RowTotal = lists:foldl(fun(J, Acc2) ->
+                                                        erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
+                                                end, G1, lists:reverse(Row)),
+                              erlang_pbc:element_mul(R, RowTotal)
+                      end, G1, lists:reverse(rows(Matrix))),
     erlang_pbc:element_cmp(Ga, Res).
 
 -spec public_key_share(erlang_pbc:element(), matrix(), non_neg_integer()) -> erlang_pbc:element().
@@ -109,13 +105,13 @@ public_key_share(U, Matrix, NodeID) ->
 
     %% return the public key share
     %% NOTE: C++ traverses the matrix in reverse, following the same
-    lists:foldl(fun(II, Acc) ->
+    lists:foldl(fun(Row, Acc) ->
                         R = erlang_pbc:element_pow(Acc, M),
-                        Row = lists:foldl(fun(J, Acc2) ->
-                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), lookup([II, J], Matrix))
-                                          end, G1, lists:reverse(lists:seq(1, sz(Matrix)))),
-                        erlang_pbc:element_mul(R, Row)
-                end, G1, lists:reverse(lists:seq(1, sz(Matrix)))).
+                        RowTotal = lists:foldl(fun(J, Acc2) ->
+                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
+                                          end, G1, lists:reverse(Row)),
+                        erlang_pbc:element_mul(R, RowTotal)
+                end, G1, lists:reverse(rows(Matrix))).
 
 -spec serialize(matrix()) -> serialized_matrix().
 serialize(#commitmentmatrix{t=T, elements=Elements}) ->
@@ -123,14 +119,9 @@ serialize(#commitmentmatrix{t=T, elements=Elements}) ->
     <<T:8/integer-signed, BinElements/binary>>.
 
 -spec deserialize(serialized_matrix(), erlang_pbc:element()) -> matrix().
-deserialize(<<T:8/integer-signed, Elements/binary>>, U) ->
-    #commitmentmatrix{t=T, elements=erlang_pbc:binary_to_elements(U, Elements)}.
-
-iter(Matrix) ->
-    [ {I, J} || I <- lists:seq(1, sz(Matrix)), J <- lists:seq(1, sz(Matrix))].
-
-sz(#commitmentmatrix{t=T}) ->
-    T+1.
+deserialize(<<T:8/integer-signed, BinElements/binary>>, U) ->
+    Elements = erlang_pbc:binary_to_elements(U, BinElements),
+    #commitmentmatrix{t=T, elements=Elements}.
 
 rows(#commitmentmatrix{t=T, elements=Elements}) ->
     rows(T, Elements, []).
