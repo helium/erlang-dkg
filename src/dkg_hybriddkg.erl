@@ -107,6 +107,8 @@ start(DKG = #dkg{id=Id, u=G1}) ->
 
 handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
+        ignore ->
+            ignore;
         {NewVSS, ok} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->

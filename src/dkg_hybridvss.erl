@@ -94,9 +94,9 @@ handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false}, Sen
         false ->
             {VSS, ok}
     end;
-handle_msg(VSS, _Sender, {send, {_Session, _Commitment, _A}}) ->
+handle_msg(_VSS, _Sender, {send, {_Session, _Commitment, _A}}) ->
     %% already received a commitment, or it's not from the dealer; ignore this one
-    {VSS, ok};
+    ignore;
 
 %% upon a message (Pd, τ, echo, C, α) from Pm (first time):
 %%     if verify-point(C, i, m, α) then
@@ -179,9 +179,9 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
         false ->
             {VSS, ok}
     end;
-handle_msg(VSS, _Sender, _Msg) ->
+handle_msg(_VSS, _Sender, _Msg) ->
     %% we're likely done here, so there's no point in processing more messages
-    {VSS, ok}.
+    ignore.
 
 -spec serialize(vss()) -> serialized_vss().
 serialize(#vss{id=Id,

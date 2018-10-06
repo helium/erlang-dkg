@@ -47,19 +47,20 @@ handle_command(start_round, State) ->
     {DKG, {send, ToSend}} = dkg_hybriddkg:start(State#state.dkg),
     {reply, ok, fixup_msgs(ToSend), State#state{dkg=DKG}};
 handle_command(is_done, State) ->
-    {reply, State#state.privkey /= undefined, [], State};
-handle_command(get_pubkey, State=#state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:public_key(PrivKey), [], State};
-handle_command({sign_share, MessageToSign}, State=#state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:sign(PrivKey, MessageToSign), [], State};
-handle_command({dec_share, CipherText}, State=#state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:decrypt_share(PrivKey, CipherText), [], State};
-handle_command(Msg, State) ->
+    {reply, State#state.privkey /= undefined, ignore};
+handle_command(get_pubkey, #state{privkey=PrivKey}) when PrivKey /= undefined ->
+    {reply, tpke_privkey:public_key(PrivKey), ignore};
+handle_command({sign_share, MessageToSign}, #state{privkey=PrivKey}) when PrivKey /= undefined ->
+    {reply, tpke_privkey:sign(PrivKey, MessageToSign), ignore};
+handle_command({dec_share, CipherText}, #state{privkey=PrivKey}) when PrivKey /= undefined ->
+    {reply, tpke_privkey:decrypt_share(PrivKey, CipherText), ignore};
+handle_command(Msg, _State) ->
     ct:pal("unhandled handle_command, Msg: ~p", [Msg]),
-    {reply, ok, [], State}.
+    {reply, ok, ignore}.
 
 handle_message(Msg, Actor, State) ->
     case dkg_hybriddkg:handle_msg(State#state.dkg, Actor, binary_to_term(Msg)) of
+        ignore -> ignore;
         {DKG, ok} ->
             {State#state{dkg=DKG}, []};
         {DKG, {result, {Shard, VerificationKey, VerificationKeys}}} ->
