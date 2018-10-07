@@ -6,6 +6,7 @@
          init/1,
          handle_command/2,
          handle_message/3,
+         callback_message/3,
          serialize/1,
          deserialize/1,
          restore/2
@@ -80,6 +81,17 @@ handle_message(Msg, Actor, State) ->
             {State#state{dkg=DKG}, []}
     end.
 
+callback_message(Actor, Message, _State) ->
+    case binary_to_term(Message) of
+        {Id, {send, {Session, SerializedCommitment, Shares}}} ->
+            term_to_binary({Id, {send, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}});
+        {Id, {echo, {Session, SerializedCommitment, Shares}}} ->
+            term_to_binary({Id, {echo, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}});
+        {Id, {ready, {Session, SerializedCommitment, Shares}}} ->
+            term_to_binary({Id, {ready, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}})
+    end.
+
+
 serialize(State) ->
     SerializedDKG = dkg_hybriddkg:serialize(State#state.dkg),
     G1 = erlang_pbc:element_to_binary(State#state.g1),
@@ -114,5 +126,7 @@ fixup_msgs(Msgs) ->
     lists:map(fun({unicast, J, NextMsg}) ->
                       {unicast, J, term_to_binary(NextMsg)};
                  ({multicast, NextMsg}) ->
-                      {multicast, term_to_binary(NextMsg)}
+                      {multicast, term_to_binary(NextMsg)};
+                 ({callback, NextMsg}) ->
+                      {callback, term_to_binary(NextMsg)}
               end, Msgs).

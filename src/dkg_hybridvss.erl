@@ -70,10 +70,9 @@ input(VSS = #vss{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secre
 
     Msgs = lists:map(fun(Node) ->
                              NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                             Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
-                             {unicast, Node, {send, {Session, SerializedCommitmentMatrix, Aj}}}
+                             dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr))
                      end, dkg_util:allnodes(N)),
-    {store_commitment(Commitment, VSS), {send, Msgs}};
+    {store_commitment(Commitment, VSS), {send, [{callback, {send, {Session, SerializedCommitmentMatrix, Msgs}}}]}};
 input(VSS, _Secret) ->
     {VSS, ok}.
 
@@ -88,9 +87,9 @@ handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false}, Sen
     case dkg_commitment:verify_poly(Commitment, Id, A) of
         true ->
             Msgs = lists:map(fun(Node) ->
-                                     {unicast, Node, {echo, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(dkg_polynomial:evaluate(A, Node))}}}
+                                     erlang_pbc:element_to_binary(dkg_polynomial:evaluate(A, Node))
                              end, dkg_util:allnodes(N)),
-            {store_commitment(Commitment, VSS#vss{received_commitment=true}), {send, Msgs}};
+            {store_commitment(Commitment, VSS#vss{received_commitment=true}), {send, [{callback, {echo, {Session, SerializedCommitmentMatrix0, Msgs}}}]}};
         false ->
             {VSS, ok}
     end;
@@ -117,9 +116,9 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session, done=false}, Sender, {echo
                         true ->
                             Subshares = dkg_commitment:interpolate(NewCommitment, echo, dkg_util:allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, Subshares))}}}
+                                                     erlang_pbc:element_to_binary(lists:nth(Node+1, Subshares))
                                              end, dkg_util:allnodes(N)),
-                            {store_commitment(NewCommitment, VSS), {send, Msgs}};
+                            {store_commitment(NewCommitment, VSS), {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs}}}]}};
                         false ->
                             {store_commitment(NewCommitment, VSS), ok}
                     end;
@@ -152,10 +151,10 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
                         true ->
                             SubShares = dkg_commitment:interpolate(NewCommitment, ready, dkg_util:allnodes(N)),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares))}}}
+                                                     erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares))
                                              end, dkg_util:allnodes(N)),
                             NewVSS = store_commitment(NewCommitment, VSS),
-                            {NewVSS, {send, Msgs}};
+                            {NewVSS, {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs}}}]}};
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
