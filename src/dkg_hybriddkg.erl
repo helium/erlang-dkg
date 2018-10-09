@@ -1,7 +1,6 @@
 -module(dkg_hybriddkg).
 
--export([init/7,
-         init/8,
+-export([init/8,
          start/1,
          serialize/1,
          deserialize/2,
@@ -82,27 +81,10 @@
 %%      Lnext ← L + n − 1
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
-init(Id, N, F, T, G1, G2, Round) ->
+init(Id, N, F, T, G1, G2, Round, Options) ->
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
-    VSSes = lists:foldl(fun(E, Map) ->
-                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
-                                maps:put(E, VSS, Map)
-                        end, #{}, dkg_util:allnodes(N)),
-
-    #dkg{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=G1,
-         u2=G2,
-         leader=1,
-         l_next=l_next(1, N),
-         vss_map=VSSes}.
-
-init(Id, N, F, T, G1, G2, Round, Callback) ->
-    erlang_pbc:element_pp_init(G1),
-    erlang_pbc:element_pp_init(G2),
+    Callback = proplists:get_value(callback, Options, false),
     VSSes = lists:foldl(fun(E, Map) ->
                                 VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
                                 maps:put(E, VSS, Map)

@@ -45,7 +45,7 @@ init([Id, N, F, T, Curve, G10, G20, Round]) ->
                    false ->
                        {G10, G20}
                end,
-    DKG = dkg_hybriddkg:init(Id, N, F, T, G1, G2, Round),
+    DKG = dkg_hybriddkg:init(Id, N, F, T, G1, G2, Round, []),
     {ok, #state{n=N, f=F, t=T, id=Id, curve=Curve, g1=G1, g2=G2, round=Round, dkg=DKG}}.
 
 handle_call(is_done, _From, State) ->

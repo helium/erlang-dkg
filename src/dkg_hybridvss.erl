@@ -1,6 +1,6 @@
 -module(dkg_hybridvss).
 
--export([init/7, init/8]).
+-export([init/8]).
 
 -export([input/2,
          serialize/1,
@@ -48,11 +48,7 @@
 
 -export_type([vss/0, session/0, serialized_vss/0]).
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session()) -> vss().
-init(Id, N, F, T, G1, G2, Session) ->
-    init(Id, N, F, T, G1, G2, Session, false).
-
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), boolean()) -> vss().
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), [any()])-> vss().
 init(Id, N, F, T, G1, G2, Session, Callback) ->
     #vss{id=Id,
          n=N,
