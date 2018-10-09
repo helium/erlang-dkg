@@ -56,7 +56,8 @@ run(N, F, T, R, Curve, G1, G2, DataDir) ->
                                                           {g1, G1},
                                                           {g2, G2},
                                                           {data_dir, DataDir},
-                                                          {round, R}])) || Id <- lists:seq(1, N) ],
+                                                          {round, R},
+                                                          {callback, true}])) || Id <- lists:seq(1, N) ],
 
     [ dkg_relcast_worker:start_round(Worker) || Worker <- Workers ],
     %% wait for DKG to complete
