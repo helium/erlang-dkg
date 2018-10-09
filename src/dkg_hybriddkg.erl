@@ -82,6 +82,7 @@
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
 init(Id, N, F, T, G1, G2, Round, Options) ->
+    true = N >= (3*T + 2*F + 1),
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
     Callback = proplists:get_value(callback, Options, false),

@@ -50,6 +50,7 @@
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), [any()])-> vss().
 init(Id, N, F, T, G1, G2, Session, Callback) ->
+    true = N >= (3*T + 2*F + 1),
     #vss{id=Id,
          n=N,
          f=F,
