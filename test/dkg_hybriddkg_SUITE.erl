@@ -69,7 +69,7 @@ leader_change_asymmetric_test(Config) ->
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0})),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, [])),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
 
