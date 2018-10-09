@@ -1,6 +1,7 @@
 -module(dkg_hybriddkg).
 
 -export([init/7,
+         init/8,
          start/1,
          serialize/1,
          deserialize/2,
@@ -99,6 +100,24 @@ init(Id, N, F, T, G1, G2, Round) ->
          l_next=l_next(1, N),
          vss_map=VSSes}.
 
+init(Id, N, F, T, G1, G2, Round, Callback) ->
+    erlang_pbc:element_pp_init(G1),
+    erlang_pbc:element_pp_init(G2),
+    VSSes = lists:foldl(fun(E, Map) ->
+                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
+                                maps:put(E, VSS, Map)
+                        end, #{}, dkg_util:allnodes(N)),
+
+    #dkg{id=Id,
+         n=N,
+         f=F,
+         t=T,
+         u=G1,
+         u2=G2,
+         leader=1,
+         l_next=l_next(1, N),
+         vss_map=VSSes}.
+
 start(DKG = #dkg{id=Id, u=G1}) ->
     MyVSS = maps:get(Id, DKG#dkg.vss_map),
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
@@ -107,8 +126,8 @@ start(DKG = #dkg{id=Id, u=G1}) ->
 
 handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
-        ignore ->
-            ignore;
+        {_VSS, ignore} ->
+            {DKG, ignore};
         {NewVSS, ok} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->

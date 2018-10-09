@@ -33,6 +33,7 @@ init(DKGArgs) ->
     G1 = proplists:get_value(g1, DKGArgs),
     G2 = proplists:get_value(g2, DKGArgs),
     Round = proplists:get_value(round, DKGArgs),
+    Callback = proplists:get_value(callback, DKGArgs),
 
     {G1_Prime, G2_Prime} = case is_binary(G1) andalso is_binary(G2) of
                    true ->
@@ -41,7 +42,7 @@ init(DKGArgs) ->
                    false ->
                        {G1, G2}
                end,
-    DKG = dkg_hybriddkg:init(ID, N, F, T, G1_Prime, G2_Prime, Round),
+    DKG = dkg_hybriddkg:init(ID, N, F, T, G1_Prime, G2_Prime, Round, Callback),
     {ok, #state{round=Round, id=ID, n=N, t=T, dkg=DKG, curve=Curve, g1=G1_Prime, g2=G2_Prime}}.
 
 handle_command(start_round, State) ->
@@ -61,7 +62,7 @@ handle_command(Msg, _State) ->
 
 handle_message(Msg, Actor, State) ->
     case dkg_hybriddkg:handle_msg(State#state.dkg, Actor, binary_to_term(Msg)) of
-        ignore -> ignore;
+        {_DKG, ignore} -> ignore;
         {DKG, ok} ->
             {State#state{dkg=DKG}, []};
         {DKG, {result, {Shard, VerificationKey, VerificationKeys}}} ->
