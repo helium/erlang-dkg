@@ -111,7 +111,7 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, VSSId}, ToSend)}};
-        {NewVSS, {result, {_Session, Commitment, Si, Rd}}} ->
+        {NewVSS, {result, {_Session, Commitment, Si}}} ->
             %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
             %%      Qhat ← {Pd}; Rhat ← {Rd}
             %%      if |Qhat| = t + 1 and Qbar = ∅ then
@@ -124,7 +124,8 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
             NewDKG = DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map),
                              vss_results=maps:put(VSSId, {Commitment, Si}, DKG#dkg.vss_results),
                              qhat=[VSSId | DKG#dkg.qhat],
-                             rhat=[{signed_vss_ready, Rd} | DKG#dkg.rhat]
+                             %% XXX these readies are currently not signed
+                             rhat=[{signed_vss_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.rhat]
                             },
 
             case length(NewDKG#dkg.qhat) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.qbar) == 0 of

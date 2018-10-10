@@ -43,7 +43,7 @@ self_subtract_test(Config) ->
     ZeroPoly = dkg_bipolynomial:sub(Poly, Poly),
     ct:pal("ZeroPoly: ~p~n", [dkg_bipolynomial:print(ZeroPoly)]),
     %% polynomial should trim any trailing empty fields (ie all of them!)
-    ?assertEqual(0, tuple_size(ZeroPoly)),
+    ?assertEqual(-1, dkg_bipolynomial:degree(ZeroPoly)),
     ok.
 
 add_zero_test(Config) ->
@@ -92,6 +92,7 @@ evaluate_test(Config) ->
 
     ResultA = dkg_polynomial:evaluate(PolyA, Six),
     ResultB = dkg_polynomial:evaluate(PolyB, Five),
+    ct:pal("~p == ~p", [erlang_pbc:element_to_string(ResultA), erlang_pbc:element_to_string(ResultB)]),
     ?assert(erlang_pbc:element_cmp(ResultA, ResultB)),
     ok.
 

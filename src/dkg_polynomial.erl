@@ -114,7 +114,7 @@ merge(PolyA, PolyB, MergeFun) ->
     lists:reverse(lists:dropwhile(fun erlang_pbc:element_is0/1, lists:reverse(MergedPoly))).
 
 serialize(Poly) ->
-    lists:map(fun erlang_pbc:element_to_binary/1, Poly).
+    erlang_pbc:elements_to_binary(Poly).
 
 deserialize(Poly, Element) ->
-    lists:map(fun(E) -> erlang_pbc:binary_to_element(Element, E) end, Poly).
+    erlang_pbc:binary_to_elements(Element, Poly).
