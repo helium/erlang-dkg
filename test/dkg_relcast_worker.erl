@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/1, start_round/1, is_done/1, get_pubkey/1, sign_share/2, dec_share/2]).
+-export([start_link/1, start_round/1, is_done/1, get_pubkey/1, sign_share/2, dec_share/2, status/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
@@ -31,6 +31,9 @@ sign_share(Pid, Msg) ->
 dec_share(Pid, Share) ->
     gen_server:call(Pid, {dec_share, Share}, infinity).
 
+status(Pid) ->
+    gen_server:call(Pid, status, infinity).
+
 init(Args) ->
     N = proplists:get_value(n, Args),
     ID = proplists:get_value(id, Args),
@@ -42,16 +45,19 @@ init(Args) ->
 
 handle_call(is_done, _From, State) ->
     {Resp, Relcast} = relcast:command(is_done, State#state.relcast),
-    {reply, Resp, do_send(State#state{relcast=Relcast})};
+    {reply, Resp, State#state{relcast=Relcast}};
 handle_call(get_pubkey, _From, State) ->
     {Resp, Relcast} = relcast:command(get_pubkey, State#state.relcast),
-    {reply, Resp, do_send(State#state{relcast=Relcast})};
+    {reply, Resp, State#state{relcast=Relcast}};
 handle_call({sign_share, MessageToSign}, _From, State) ->
     {Resp, Relcast} = relcast:command({sign_share, MessageToSign}, State#state.relcast),
-    {reply, Resp, do_send(State#state{relcast=Relcast})};
+    {reply, Resp, State#state{relcast=Relcast}};
 handle_call({dec_share, CipherText}, _From, State) ->
     {Resp, Relcast} = relcast:command({dec_share, CipherText}, State#state.relcast),
-    {reply, Resp, do_send(State#state{relcast=Relcast})};
+    {reply, Resp, State#state{relcast=Relcast}};
+handle_call(status, _From, State) ->
+    {Resp, Relcast} = relcast:command(status, State#state.relcast),
+    {reply, Resp, State#state{relcast=Relcast}};
 handle_call(Msg, _From, State) ->
     io:format("unhandled msg ~p~n", [Msg]),
     {reply, ok, State}.

@@ -54,6 +54,8 @@ handle_command({sign_share, MessageToSign}, #state{privkey=PrivKey}) when PrivKe
     {reply, tpke_privkey:sign(PrivKey, MessageToSign), ignore};
 handle_command({dec_share, CipherText}, #state{privkey=PrivKey}) when PrivKey /= undefined ->
     {reply, tpke_privkey:decrypt_share(PrivKey, CipherText), ignore};
+handle_command(status, #state{dkg=DKG}) ->
+    {reply, dkg_hybriddkg:status(DKG), ignore};
 handle_command(Msg, _State) ->
     ct:pal("unhandled handle_command, Msg: ~p", [Msg]),
     {reply, ok, ignore}.
