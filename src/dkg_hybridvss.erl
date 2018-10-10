@@ -210,15 +210,9 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false, callback=true}, Sender, {r
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
-                                    case VSS#vss.done of
-                                        true ->
-                                            %% nothing to do here, only return a result once
-                                            {VSS, ok};
-                                        false ->
-                                            [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
-                                            %% clear the commitments out of our state and return the winning one
-                                            {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}}
-                                    end;
+                                    [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
+                                    %% clear the commitments out of our state and return the winning one
+                                    {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}};
                                 false ->
                                     NewVSS = store_commitment(NewCommitment, VSS),
                                     {NewVSS, ok}
@@ -250,15 +244,9 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
                                 true->
-                                    case VSS#vss.done of
-                                        true ->
-                                            %% nothing to do here, only return a result once
-                                            {VSS, ok};
-                                        false ->
-                                            [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
-                                            %% clear the commitments out of our state and return the winning one
-                                            {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}}
-                                    end;
+                                    [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
+                                    %% clear the commitments out of our state and return the winning one
+                                    {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}};
                                 false ->
                                     NewVSS = store_commitment(NewCommitment, VSS),
                                     {NewVSS, ok}

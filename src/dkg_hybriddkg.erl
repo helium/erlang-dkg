@@ -57,7 +57,7 @@
 -type signed_leader_change() :: {signed_leader_change, pos_integer(), qset(), rhat() | mbar()}.
 -type signed_echo() :: {signed_echo, qset()}.
 -type signed_ready() :: {signed_ready, qset()}.
--type vss_ready() :: {signed_vss_ready, dkg_hybridvss:readies()}.
+-type vss_ready() :: {signed_vss_ready, dkg_commitment:readies()}.
 -type identity() :: {Leader :: pos_integer(), Q :: [pos_integer()]}.
 -type echo() :: {Sender :: pos_integer(), SignedEcho :: signed_echo()}.
 -type ready() :: {Sender :: pos_integer(), SignedReady :: signed_ready()}.
