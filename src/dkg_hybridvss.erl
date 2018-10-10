@@ -42,13 +42,13 @@
 -type send_msg() :: {unicast, pos_integer(), {send, {session(), dkg_commitmentmatrix:serialized_matrix(), dkg_polynomial:polynomial()}}}.
 -type echo_msg() :: {unicast, pos_integer(), {echo, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
--type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()], map()}}.
+-type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 -type vss() :: #vss{}.
 -type serialized_vss() :: #serialized_vss{}.
 
 -export_type([vss/0, session/0, serialized_vss/0]).
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), [any()])-> vss().
+-spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), boolean())-> vss().
 init(Id, N, F, T, G1, G2, Session, Callback) ->
     true = N >= (3*T + 2*F + 1),
     #vss{id=Id,
@@ -96,7 +96,7 @@ input(VSS, _Secret) ->
 %%     if verify-poly(C, i, a) then
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
--spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | result()}.
+-spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | ignore | result()}.
 handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false, callback=true}, Sender, {send, {Session = {Sender, _}, SerializedCommitmentMatrix0, SA}}) ->
     Commitment = get_commitment(SerializedCommitmentMatrix0, VSS),
     A = dkg_polynomial:deserialize(SA, VSS#vss.u),
