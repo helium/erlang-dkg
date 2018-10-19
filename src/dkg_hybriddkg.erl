@@ -148,7 +148,7 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
 %%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
 %%          send the message (L, τ, echo, Q)sign to each Pj
-handle_msg(DKG, _Sender, {send, Q, {rhat, _Rhat}}) ->
+handle_msg(DKG, _Sender, {send, Q, _RorM}) ->
     %% TODO verify signatures
     case length(DKG#dkg.qbar) == 0 orelse lists:usort(DKG#dkg.qbar) == lists:usort(Q) of
         true ->
@@ -329,9 +329,9 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
             {DKG, ok}
     end;
 handle_msg(DKG, _Sender, {signed_leader_change, _Lbar, _, _}) ->
-    {DKG, ok};
-handle_msg(DKG, _Sender, Msg) ->
-    {DKG, {unhandled_msg, Msg}}.
+    {DKG, ignore};
+handle_msg(DKG, _Sender, _Msg) ->
+    {DKG, ignore}.
 
 %% helper functions
 -spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
