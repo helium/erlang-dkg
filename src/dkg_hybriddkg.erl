@@ -67,7 +67,7 @@
 -type vss_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
 -type serialized_vss_map() :: #{pos_integer() => dkg_hybridvss:serialized_vss()}.
 -type vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
--type serialized_vss_results() :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}}.
+-type serialized_vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: binary()}}.
 -type dkg() :: #dkg{}.
 -type serialized_dkg() :: #serialized_dkg{}.
 
@@ -85,9 +85,8 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
     true = N >= (3*T + 2*F + 1),
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
-    Callback = proplists:get_value(callback, Options, false),
     VSSes = lists:foldl(fun(E, Map) ->
-                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
+                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Options),
                                 maps:put(E, VSS, Map)
                         end, #{}, dkg_util:allnodes(N)),
 

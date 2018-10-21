@@ -16,41 +16,33 @@
           n :: pos_integer(),
           f :: pos_integer(),
           t :: pos_integer(),
-          u :: erlang_pbc:element(),
-          u2 :: erlang_pbc:element(),
+          u :: erlang_pbc:element() | binary(),
+          u2 :: erlang_pbc:element() | binary(),
           session :: session(),
           received_commitment = false :: boolean(),
           commitments = #{} :: #{binary() => dkg_commitment:commitment()},
-          callback = false :: boolean()
-         }).
-
--record(serialized_vss, {
-          done = false :: boolean(),
-          id :: pos_integer(),
-          n :: pos_integer(),
-          f :: pos_integer(),
-          t :: pos_integer(),
-          u :: binary(),
-          u2 :: binary(),
-          session :: session(),
-          received_commitment = false :: boolean(),
-          commitments = #{} :: #{binary() => dkg_commitment:serialized_commitment()},
-          callback :: boolean()
-         }).
+          callback = false :: boolean()}).
 
 -type session() :: {Dealer :: pos_integer(), Round :: pos_integer()}.
--type send_msg() :: {unicast, pos_integer(), {send, {session(), dkg_commitmentmatrix:serialized_matrix(), dkg_polynomial:polynomial()}}}.
--type echo_msg() :: {unicast, pos_integer(), {echo, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
--type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
+-type send_msg() :: {unicast, pos_integer(), {send, {session(), dkg_commitmentmatrix:matrix(), dkg_polynomial:polynomial()}}}.
+-type echo_msg() :: {unicast, pos_integer(), {echo, {session(), dkg_commitmentmatrix:matrix(), binary()}}}.
+-type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:matrix(), binary()}}}.
 -type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 -type vss() :: #vss{}.
--type serialized_vss() :: #serialized_vss{}.
 
--export_type([vss/0, session/0, serialized_vss/0]).
+-export_type([vss/0, session/0]).
 
--spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(), erlang_pbc:element(), erlang_pbc:element(), session(), boolean())-> vss().
-init(Id, N, F, T, G1, G2, Session, Callback) ->
+-spec init(Id :: pos_integer(),
+           N :: pos_integer(),
+           F :: pos_integer(),
+           T :: pos_integer(),
+           G1 :: erlang_pbc:element(),
+           G2 :: erlang_pbc:element(),
+           Session :: session(),
+           Options :: [any()])-> vss().
+init(Id, N, F, T, G1, G2, Session, Options) ->
     true = N >= (3*T + 2*F + 1),
+    Callback = proplists:get_value(callback, Options, false),
     #vss{id=Id,
          n=N,
          f=F,
@@ -69,34 +61,26 @@ init(Id, N, F, T, G1, G2, Session, Callback) ->
 input(VSS = #vss{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N, callback=true}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U2, T, Secret),
     Commitment = dkg_commitment:new(dkg_util:allnodes(N), U2, BiPoly),
-    %% only serialize this once, not in the loop below
-    SerializedCommitmentMatrix = dkg_commitmentmatrix:serialize(dkg_commitment:matrix(Commitment)),
-
-    Msgs = lists:map(fun(Node) ->
-                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                             dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr))
-                     end, dkg_util:allnodes(N)),
-    {store_commitment(Commitment, VSS), {send, [{callback, {send, {Session, SerializedCommitmentMatrix, Msgs}}}]}};
+    Matrix = dkg_commitmentmatrix:serialize(dkg_commitment:matrix(Commitment)),
+    {store_commitment(Commitment, VSS), {send, [{callback, {send, {Session,
+                                                                   Matrix,
+                                                                   gen_input_msgs(N, U, Session, Matrix, BiPoly)}}}]}};
 input(VSS = #vss{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secret) when Dealer == Id ->
     BiPoly = dkg_bipolynomial:generate(U2, T, Secret),
     Commitment = dkg_commitment:new(dkg_util:allnodes(N), U2, BiPoly),
-    %% only serialize this once, not in the loop below
-    SerializedCommitmentMatrix = dkg_commitmentmatrix:serialize(dkg_commitment:matrix(Commitment)),
-
-    Msgs = lists:map(fun(Node) ->
-                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                             Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
-                             {unicast, Node, {send, {Session, SerializedCommitmentMatrix, Aj}}}
-                     end, dkg_util:allnodes(N)),
-    {store_commitment(Commitment, VSS), {send, Msgs}};
+    Matrix = dkg_commitmentmatrix:serialize(dkg_commitment:matrix(Commitment)),
+    {store_commitment(Commitment, VSS), {send, gen_input_msgs(N, U, Session, Matrix, BiPoly)}};
 input(VSS, _Secret) ->
     {VSS, ok}.
+
 
 %% upon a message (Pd, τ, send, C, a) from Pd (first time):
 %%     if verify-poly(C, i, a) then
 %%         for all j ∈ [1, n] do
 %%             send the message (Pd , τ, echo, C, a(j)) to Pj
--spec handle_msg(vss(), pos_integer(), send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | ignore | result()}.
+-spec handle_msg(VSS :: vss(),
+                 Sender :: pos_integer(),
+                 _MsgType :: send_msg() | echo_msg() | ready_msg()) -> {vss(), {send, [echo_msg() | ready_msg()]} | ok | ignore | result()}.
 handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false, callback=true}, Sender, {send, {Session = {Sender, _}, SerializedCommitmentMatrix0, SA}}) ->
     Commitment = get_commitment(SerializedCommitmentMatrix0, VSS),
     A = dkg_polynomial:deserialize(SA, VSS#vss.u),
@@ -262,53 +246,24 @@ handle_msg(VSS, _Sender, _Msg) ->
     %% we're likely done here, so there's no point in processing more messages
     {VSS, ignore}.
 
--spec serialize(vss()) -> serialized_vss().
-serialize(#vss{id=Id,
-               n=N,
-               f=F,
-               t=T,
-               u=U,
-               u2=U2,
-               done=Done,
-               session=Session,
-               received_commitment=ReceivedCommitment,
-               commitments=Commitments,
-               callback=Callback}) ->
-    #serialized_vss{id=Id,
-                    n=N,
-                    f=F,
-                    t=T,
-                    u=erlang_pbc:element_to_binary(U),
-                    u2=erlang_pbc:element_to_binary(U2),
-                    done=Done,
-                    session=Session,
-                    received_commitment=ReceivedCommitment,
-                    commitments=maps:map(fun(_, V) -> dkg_commitment:serialize(V) end, Commitments),
-                    callback=Callback}.
+-spec serialize(vss()) -> vss().
+serialize(VSS=#vss{
+                 u=U,
+                 u2=U2,
+                 commitments=Commitments
+                }) ->
+    VSS#vss{u=erlang_pbc:element_to_binary(U),
+            u2=erlang_pbc:element_to_binary(U2),
+            commitments=maps:map(fun(_, V) -> dkg_commitment:serialize(V) end, Commitments)
+           }.
 
--spec deserialize(serialized_vss(), erlang_pbc:element()) -> vss().
-deserialize(#serialized_vss{id=Id,
-                            n=N,
-                            f=F,
-                            t=T,
-                            u=SerializedU,
-                            u2=SerializedU2,
-                            done=Done,
-                            session=Session,
-                            received_commitment=ReceivedCommitment,
-                            commitments=SerializedCommitments,
-                            callback=Callback}, Element) ->
-    #vss{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=erlang_pbc:binary_to_element(Element, SerializedU),
-         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         done=Done,
-         session=Session,
-         received_commitment=ReceivedCommitment,
-         commitments=maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments),
-         callback=Callback}.
+-spec deserialize(vss(), erlang_pbc:element()) -> vss().
+deserialize(VSS=#vss{u=SerializedU,
+                     u2=SerializedU2,
+                     commitments=SerializedCommitments}, Element) ->
+    VSS#vss{u=erlang_pbc:binary_to_element(Element, SerializedU),
+            u2=erlang_pbc:binary_to_element(Element, SerializedU2),
+            commitments=maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments)}.
 
 -spec status(vss()) -> map().
 status(VSS) ->
@@ -326,6 +281,21 @@ status(VSS) ->
       done => VSS#vss.done
      }.
 
+%% ------------------------------------------------------------------
+%% Internal helper functions
+%% ------------------------------------------------------------------
+-spec gen_input_msgs(N :: pos_integer(),
+                     U :: erlang_pbc:element(),
+                     Session :: session(),
+                     Matrix :: dkg_commitmentmatrix:matrix(),
+                     BiPoly :: dkg_bipolynomial:bipolynomial()) -> {send, [send_msg()]}.
+gen_input_msgs(N, U, Session, Matrix, BiPoly) ->
+    lists:map(fun(Node) ->
+                      NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
+                      Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
+                      {unicast, Node, {send, {Session, Matrix, Aj}}}
+              end, dkg_util:allnodes(N)).
+
 get_commitment(SerializedMatrix, VSS = #vss{n=N, t=T, u2=G2}) ->
     Key = erlang:phash2(SerializedMatrix),
     case maps:find(Key, VSS#vss.commitments) of
@@ -337,5 +307,5 @@ get_commitment(SerializedMatrix, VSS = #vss{n=N, t=T, u2=G2}) ->
     end.
 
 store_commitment(Commitment, VSS) ->
-    Key = erlang:phash2(dkg_commitment:binary_matrix(Commitment)),
+    Key = erlang:phash2(dkg_commitment:matrix(dkg_commitment:serialize(Commitment))),
     VSS#vss{commitments=maps:put(Key, Commitment, VSS#vss.commitments)}.

@@ -46,7 +46,7 @@ asymmetric_test(Config) ->
 
 run(Module, N, F, T, Curve, G1, G2) ->
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, false) || Id <- lists:seq(1, N) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, [{callback, false}]) || Id <- lists:seq(1, N) ],
 
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
 
@@ -62,10 +62,11 @@ run(Module, N, F, T, Curve, G1, G2) ->
                                 end, #{}, sets:to_list(ConvergedResults)),
 
     AllCommitments = [Commitment || {result, {_Node, {_Session, Commitment, _Share}}} <- sets:to_list(ConvergedResults)],
+    ct:pal("AllCommitments: ~p", [AllCommitments]),
     OutputCommitment = hd(AllCommitments),
 
-    %[VerificationKey | PublicKeyShares] = dkg_commitment:interpolate(OutputCommitment, ready, lists:seq(1, N)),
-    VerificationKey = dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)),
+    DeserializedMatrix = dkg_commitmentmatrix:deserialize(dkg_commitment:matrix(OutputCommitment), dkg_commitment:generator(OutputCommitment)),
+    VerificationKey = dkg_commitmentmatrix:lookup([1, 1], DeserializedMatrix),
     true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
     PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
 
@@ -88,7 +89,9 @@ run(Module, N, F, T, Curve, G1, G2) ->
             ok
     end,
 
-    true = lists:all(fun(C) -> dkg_commitment:cmp(hd(AllCommitments), C) end, tl(AllCommitments)),
+    true = lists:all(fun(C) ->
+                             dkg_commitment:cmp(OutputCommitment, C)
+                     end, tl(AllCommitments)),
 
     {Indices0, Elements} = lists:unzip(maps:to_list(NodesAndShares)),
     Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],

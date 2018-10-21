@@ -17,10 +17,9 @@
           elements :: [erlang_pbc:element()]
          }).
 
--type matrix() :: #commitmentmatrix{}.
--type serialized_matrix() :: binary().
+-type matrix() :: #commitmentmatrix{} | binary().
 
--export_type([matrix/0, serialized_matrix/0]).
+-export_type([matrix/0]).
 
 -spec new(erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> matrix().
 new(Generator, T) when is_integer(T) ->
@@ -44,11 +43,21 @@ print(Matrix) ->
                                     list_to_tuple([ erlang_pbc:element_to_string(X) || X <- R])
                             end, rows(Matrix))).
 
--spec cmp(matrix(), matrix()) -> boolean().
-cmp(MatrixA, MatrixB) ->
-    lists:all(fun({I, J}) ->
-                      erlang_pbc:element_cmp(I, J)
-              end, lists:zip(MatrixA#commitmentmatrix.elements, MatrixB#commitmentmatrix.elements)).
+-spec cmp({UA :: erlang_pbc:element(), MatrixA :: matrix()},
+          {UB :: erlang_pbc:element(), MatrixB :: matrix()}) -> boolean().
+cmp({UA, MatrixA}, {UB, MatrixB}) when is_binary(MatrixA) andalso is_binary(MatrixB) ->
+    DMatrixA = deserialize(MatrixA, UA),
+    DMatrixB = deserialize(MatrixB, UB),
+    cmp_helper(DMatrixA, DMatrixB);
+cmp({_UA, MatrixA}, {_UB, MatrixB}) ->
+    cmp_helper(MatrixA, MatrixB).
+
+
+-spec t(matrix()) -> -1 | non_neg_integer().
+t(Matrix) -> Matrix#commitmentmatrix.t.
+
+-spec elements(matrix()) -> [erlang_pbc:elements()].
+elements(Matrix) -> Matrix#commitmentmatrix.elements.
 
 -spec mul(matrix(), matrix()) -> matrix().
 mul(MatrixA, MatrixB) ->
@@ -61,30 +70,66 @@ mul(MatrixA, MatrixB) ->
     Elements = lists:map(fun({A, B}) ->
                                  erlang_pbc:element_mul(A, B)
                          end, lists:zip(MatrixA#commitmentmatrix.elements, MatrixB#commitmentmatrix.elements)),
-    #commitmentmatrix{t=MatrixA#commitmentmatrix.t, elements=Elements}.
+    #commitmentmatrix{t=t(MatrixA), elements=Elements}.
 
 -spec verify_poly(erlang_pbc:element(), matrix(), non_neg_integer(), dkg_polynomial:polynomial()) -> boolean().
+verify_poly(U, Matrix, VerifierID, Poly) when is_binary(Matrix) ->
+    check_verify_poly(U, deserialize(Matrix, U), VerifierID, Poly);
 verify_poly(U, Matrix, VerifierID, Poly) ->
-    %% TODO obviously use something appropriate here
-    I = erlang_pbc:element_set(hd(Poly), VerifierID),
+    check_verify_poly(U, Matrix, VerifierID, Poly).
 
-    lists:foldl(fun(_L, false) ->
-                        false;
-                   ({Row, PE}, _Acc) ->
-                        E1 = erlang_pbc:element_pow(U, PE),
-                        E2 = lists:foldl(fun(J, Acc2) ->
-                                                 erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
-                                         end, erlang_pbc:element_set(U, 1), lists:reverse(Row)),
-                        erlang_pbc:element_cmp(E1, E2)
-                end, true, lists:zip(rows(Matrix), Poly)).
-
--spec verify_point(erlang_pbc:element(), matrix(), non_neg_integer(), non_neg_integer(), erlang_pbc:element()) -> boolean().
+-spec verify_point(U :: erlang_pbc:element(),
+                   Matrix :: matrix(),
+                   SenderID :: non_neg_integer(),
+                   VerifierID :: non_neg_integer(),
+                   Point :: erlang_pbc:element()) -> boolean().
+verify_point(U, Matrix, SenderID, VerifierID, Point) when is_binary(Matrix) ->
+    check_verify_point(U, deserialize(Matrix, U), SenderID, VerifierID, Point);
 verify_point(U, Matrix, SenderID, VerifierID, Point) ->
+    check_verify_point(U, Matrix, SenderID, VerifierID, Point).
+
+-spec public_key_share(U :: erlang_pbc:element(),
+                       Matrix :: matrix(),
+                       NodeID :: non_neg_integer()) -> erlang_pbc:element().
+public_key_share(U, Matrix, NodeID) when is_binary(Matrix) ->
+    public_key_shares(U, deserialize(Matrix, U), NodeID);
+public_key_share(U, Matrix, NodeID) ->
+    public_key_shares(U, Matrix, NodeID).
+
+-spec serialize(matrix()) -> matrix().
+serialize(Matrix) when is_binary(Matrix) ->
+    Matrix;
+serialize(#commitmentmatrix{t=T, elements=Elements}) ->
+    BinElements = erlang_pbc:elements_to_binary(Elements),
+    <<T:8/integer-signed, BinElements/binary>>.
+
+-spec deserialize(matrix(), erlang_pbc:element()) -> matrix().
+deserialize(<<T:8/integer-signed, BinElements/binary>>, U) ->
+    Elements = erlang_pbc:binary_to_elements(U, BinElements),
+    #commitmentmatrix{t=T, elements=Elements}.
+
+%% ------------------------------------------------------------------
+%% Internal helper functions
+%% ------------------------------------------------------------------
+rows(#commitmentmatrix{t=T, elements=Elements}) ->
+    rows(T, Elements, []).
+
+rows(_, [], Acc) ->
+    lists:reverse(Acc);
+rows(T, Elements, Acc) ->
+    {Row, Rest} = lists:split(T+1, Elements),
+    rows(T, Rest, [Row|Acc]).
+
+-spec check_verify_point(U :: erlang_pbc:element(),
+                         Matrix :: matrix(),
+                         SenderID :: non_neg_integer(),
+                         VerifierID :: non_neg_integer(),
+                         Point :: erlang_pbc:element()) -> boolean().
+check_verify_point(U, Matrix, SenderID, VerifierID, Point) ->
     M = erlang_pbc:element_set(Point, SenderID),
     I = erlang_pbc:element_set(Point, VerifierID),
     G1 = erlang_pbc:element_set(U, 1),
     erlang_pbc:element_pp_init(G1),
-
     Ga = erlang_pbc:element_pow(U, Point),
     Res = lists:foldl(fun(Row, Acc) ->
                               R = erlang_pbc:element_pow(Acc, M),
@@ -95,8 +140,22 @@ verify_point(U, Matrix, SenderID, VerifierID, Point) ->
                       end, G1, lists:reverse(rows(Matrix))),
     erlang_pbc:element_cmp(Ga, Res).
 
--spec public_key_share(erlang_pbc:element(), matrix(), non_neg_integer()) -> erlang_pbc:element().
-public_key_share(U, Matrix, NodeID) ->
+-spec check_verify_poly(erlang_pbc:element(), matrix(), non_neg_integer(), dkg_polynomial:polynomial()) -> boolean().
+check_verify_poly(U, Matrix, VerifierID, Poly) ->
+    %% TODO obviously use something appropriate here
+    I = erlang_pbc:element_set(hd(Poly), VerifierID),
+    lists:foldl(fun(_L, false) ->
+                        false;
+                   ({Row, PE}, _Acc) ->
+                        E1 = erlang_pbc:element_pow(U, PE),
+                        E2 = lists:foldl(fun(J, Acc2) ->
+                                                 erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
+                                         end, erlang_pbc:element_set(U, 1), lists:reverse(Row)),
+                        erlang_pbc:element_cmp(E1, E2)
+                end, true, lists:zip(rows(Matrix), Poly)).
+
+-spec public_key_shares(erlang_pbc:element(), matrix(), non_neg_integer()) -> erlang_pbc:element().
+public_key_shares(U, Matrix, NodeID) ->
     %% TODO this shares significant code with verify_point, consider refactoring them to share common code
     M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), NodeID),
     I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
@@ -113,21 +172,10 @@ public_key_share(U, Matrix, NodeID) ->
                         erlang_pbc:element_mul(R, RowTotal)
                 end, G1, lists:reverse(rows(Matrix))).
 
--spec serialize(matrix()) -> serialized_matrix().
-serialize(#commitmentmatrix{t=T, elements=Elements}) ->
-    BinElements = erlang_pbc:elements_to_binary(Elements),
-    <<T:8/integer-signed, BinElements/binary>>.
-
--spec deserialize(serialized_matrix(), erlang_pbc:element()) -> matrix().
-deserialize(<<T:8/integer-signed, BinElements/binary>>, U) ->
-    Elements = erlang_pbc:binary_to_elements(U, BinElements),
-    #commitmentmatrix{t=T, elements=Elements}.
-
-rows(#commitmentmatrix{t=T, elements=Elements}) ->
-    rows(T, Elements, []).
-
-rows(_, [], Acc) ->
-    lists:reverse(Acc);
-rows(T, Elements, Acc) ->
-    {Row, Rest} = lists:split(T+1, Elements),
-    rows(T, Rest, [Row|Acc]).
+-spec cmp_helper(matrix(), matrix()) -> boolean().
+cmp_helper(MatrixA, MatrixB) ->
+    io:format("MatrixA: ~p~n", [MatrixA]),
+    io:format("MatrixB: ~p~n", [MatrixB]),
+    lists:all(fun({I, J}) ->
+                      erlang_pbc:element_cmp(I, J)
+              end, lists:zip(elements(MatrixA), elements(MatrixB))).
