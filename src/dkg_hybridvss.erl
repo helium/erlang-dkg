@@ -60,12 +60,19 @@ init(Id, N, F, T, G1, G2, Session, Options) ->
 -spec input(VSS :: vss(), Secret :: erlang_pbc:element()) -> {vss(), {send, [send_msg()]} | ok}.
 input(VSS = #vss{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N, callback=true}, Secret) when Dealer == Id ->
     {BiPoly, Commitment, Matrix} = create_input(N, U2, T, Secret),
-    {store_commitment(Commitment, VSS), {send, [{callback, {send, {Session,
-                                                                   Matrix,
-                                                                   gen_input_msgs(N, U, Session, Matrix, BiPoly)}}}]}};
+    Msgs = lists:map(fun(Node) ->
+                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
+                             dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr))
+                     end, dkg_util:allnodes(N)),
+    {store_commitment(Commitment, VSS), {send, [{callback, {send, {Session, Matrix, Msgs}}}]}};
 input(VSS = #vss{session=Session={Dealer,_}, id=Id, u=U, u2=U2, t=T, n=N}, Secret) when Dealer == Id ->
     {BiPoly, Commitment, Matrix} = create_input(N, U2, T, Secret),
-    {store_commitment(Commitment, VSS), {send, gen_input_msgs(N, U, Session, Matrix, BiPoly)}};
+    Msgs = lists:map(fun(Node) ->
+                             NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
+                             Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
+                             {unicast, Node, {send, {Session, Matrix, Aj}}}
+                     end, dkg_util:allnodes(N)),
+    {store_commitment(Commitment, VSS), {send, Msgs}};
 input(VSS, _Secret) ->
     {VSS, ok}.
 
@@ -280,18 +287,6 @@ status(VSS) ->
 %% ------------------------------------------------------------------
 %% Internal helper functions
 %% ------------------------------------------------------------------
--spec gen_input_msgs(N :: pos_integer(),
-                     U :: erlang_pbc:element() | binary(),
-                     Session :: session(),
-                     Matrix :: binary(),
-                     BiPoly :: dkg_bipolynomial:bipolynomial()) -> [{unicast, pos_integer(), send_msg()}].
-gen_input_msgs(N, U, Session, Matrix, BiPoly) ->
-    lists:map(fun(Node) ->
-                      NodeZr = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), Node),
-                      Aj = dkg_polynomial:serialize(dkg_bipolynomial:evaluate(BiPoly, NodeZr)),
-                      {unicast, Node, {send, {Session, Matrix, Aj}}}
-              end, dkg_util:allnodes(N)).
-
 -spec get_commitment(Matrix :: binary(), VSS :: vss()) -> dkg_commitment:commitment().
 get_commitment(Matrix, VSS = #vss{n=N, t=T, u2=G2}) ->
     Key = erlang:phash2(Matrix),

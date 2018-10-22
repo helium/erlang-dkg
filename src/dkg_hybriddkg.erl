@@ -14,31 +14,10 @@
           n :: pos_integer(),
           f :: pos_integer(),
           t :: pos_integer(),
-          u :: erlang_pbc:element(),
-          u2 :: erlang_pbc:element(),
+          u :: erlang_pbc:element() | binary(),
+          u2 :: erlang_pbc:element() | binary(),
           vss_map = #{} :: vss_map(),
-          vss_results = #{} :: vss_results(),
-          qbar = [] :: qset(),
-          qhat = [] :: qset(),
-          rhat = [] :: rhat(),
-          mbar = [] :: mbar(),
-          elq = #{} :: elq(),
-          rlq = #{} :: rlq(),
-          lc_flag = false :: boolean(),
-          leader :: pos_integer(),
-          l_next :: pos_integer(),
-          lc_map = #{} :: lc_map()
-         }).
-
--record(serialized_dkg, {
-          id :: pos_integer(),
-          n :: pos_integer(),
-          f :: pos_integer(),
-          t :: pos_integer(),
-          u :: binary(),
-          u2 :: binary(),
-          vss_map :: vss_map(),
-          vss_results = #{} :: serialized_vss_results(),
+          vss_results = #{} :: vss_results() | serialized_vss_results(),
           qbar = [] :: qset(),
           qhat = [] :: qset(),
           rhat = [] :: rhat(),
@@ -68,7 +47,6 @@
 -type vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
 -type serialized_vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: binary()}}.
 -type dkg() :: #dkg{}.
--type serialized_dkg() :: #serialized_dkg{}.
 
 -export_type([dkg/0]).
 
@@ -422,83 +400,25 @@ store_leader_change(DKG, Sender, {signed_leader_change, Lbar, _, _}=LeaderChange
             false
     end.
 
--spec serialize(dkg()) -> serialized_dkg().
-serialize(#dkg{id=Id,
-               n=N,
-               f=F,
-               t=T,
-               u=U,
-               u2=U2,
-               vss_map=VSSMap,
-               vss_results=VSSResults,
-               qbar=Qbar,
-               qhat=Qhat,
-               rhat=Rhat,
-               mbar=Mbar,
-               elq=Elq,
-               rlq=Rlq,
-               lc_flag=LCFlag,
-               leader=Leader,
-               l_next=LNext,
-               lc_map=LCMap}) ->
-    #serialized_dkg{id=Id,
-                    n=N,
-                    f=F,
-                    t=T,
-                    u=erlang_pbc:element_to_binary(U),
-                    u2=erlang_pbc:element_to_binary(U2),
-                    vss_map=serialize_vss_map(VSSMap),
-                    vss_results=serialize_vss_results(VSSResults),
-                    qbar=Qbar,
-                    qhat=Qhat,
-                    rhat=Rhat,
-                    mbar=Mbar,
-                    elq=Elq,
-                    rlq=Rlq,
-                    lc_flag=LCFlag,
-                    leader=Leader,
-                    l_next=LNext,
-                    lc_map=LCMap}.
+-spec serialize(dkg()) -> dkg().
+serialize(DKG=#dkg{u=U,
+                   u2=U2,
+                   vss_map=VSSMap,
+                   vss_results=VSSResults}) ->
+    DKG#dkg{u=erlang_pbc:element_to_binary(U),
+            u2=erlang_pbc:element_to_binary(U2),
+            vss_map=serialize_vss_map(VSSMap),
+            vss_results=serialize_vss_results(VSSResults)}.
 
--spec deserialize(serialized_dkg(), erlang_pbc:element()) -> dkg().
-deserialize(#serialized_dkg{id=Id,
-                            n=N,
-                            f=F,
-                            t=T,
-                            u=SerializedU,
-                            u2=SerializedU2,
-                            vss_map=SerializedVSSMap,
-                            vss_results=SerializedVSSResults,
-                            qbar=Qbar,
-                            qhat=Qhat,
-                            rhat=Rhat,
-                            mbar=Mbar,
-                            elq=Elq,
-                            rlq=Rlq,
-                            lc_flag=LCFlag,
-                            leader=Leader,
-                            l_next=LNext,
-                            %% XXX: Only one element is enough?
-                            %% presumably we need to generate U and U2 again to deserialize? Not sure...
-                            lc_map=LCMap}, Element) ->
-    #dkg{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=erlang_pbc:binary_to_element(Element, SerializedU),
-         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         vss_map=deserialize_vss_map(SerializedVSSMap, Element),
-         vss_results=deserialize_vss_results(SerializedVSSResults, Element),
-         qbar=Qbar,
-         qhat=Qhat,
-         rhat=Rhat,
-         mbar=Mbar,
-         elq=Elq,
-         rlq=Rlq,
-         lc_flag=LCFlag,
-         leader=Leader,
-         l_next=LNext,
-         lc_map=LCMap}.
+-spec deserialize(dkg(), erlang_pbc:element()) -> dkg().
+deserialize(DKG=#dkg{u=SerializedU,
+                     u2=SerializedU2,
+                     vss_map=SerializedVSSMap,
+                     vss_results=SerializedVSSResults}, Element) ->
+    DKG#dkg{u=erlang_pbc:binary_to_element(Element, SerializedU),
+            u2=erlang_pbc:binary_to_element(Element, SerializedU2),
+            vss_map=deserialize_vss_map(SerializedVSSMap, Element),
+            vss_results=deserialize_vss_results(SerializedVSSResults, Element)}.
 
 -spec serialize_vss_map(vss_map()) -> vss_map().
 serialize_vss_map(VSSMap) ->
