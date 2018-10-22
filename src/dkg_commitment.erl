@@ -42,14 +42,14 @@ new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
     #commitment{nodes=NodeIDs, matrix=Matrix, generator=Generator};
 new(NodeIDs, Generator, BiPoly) ->
     Matrix = dkg_commitmentmatrix:new(Generator, BiPoly),
-    #commitment{nodes=NodeIDs, matrix=Matrix,  generator=Generator}.
+    #commitment{nodes=NodeIDs, matrix=Matrix, generator=Generator}.
 
 -spec generator(commitment()) -> erlang_pbc:element() | binary().
 generator(Commitment) -> Commitment#commitment.generator.
 
 -spec cmp(commitment(), commitment()) -> boolean().
 cmp(CommitmentA, CommitmentB) ->
-    dkg_commitmentmatrix:cmp({generator(CommitmentA), matrix(CommitmentA)}, {generator(CommitmentB), matrix(CommitmentB)}).
+    dkg_commitmentmatrix:cmp(matrix(CommitmentA), matrix(CommitmentB)).
 
 -spec mul(commitment(), commitment()) -> commitment().
 mul(CommitmentA, CommitmentB) ->
@@ -132,7 +132,7 @@ matrix(#commitment{matrix=Matrix}) ->
 
 -spec set_matrix(commitment(), dkg_commitmentmatrix:matrix()) -> commitment().
 set_matrix(C = #commitment{}, Matrix) ->
-    C#commitment{matrix=dkg_commitmentmatrix:serialize(Matrix)}.
+    C#commitment{matrix=Matrix}.
 
 -spec serialize(commitment()) -> commitment().
 serialize(C=#commitment{matrix=Matrix,

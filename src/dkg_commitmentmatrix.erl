@@ -43,14 +43,11 @@ print(Matrix) ->
                                     list_to_tuple([ erlang_pbc:element_to_string(X) || X <- R])
                             end, rows(Matrix))).
 
--spec cmp({UA :: erlang_pbc:element(), MatrixA :: matrix()},
-          {UB :: erlang_pbc:element(), MatrixB :: matrix()}) -> boolean().
-cmp({UA, MatrixA}, {UB, MatrixB}) when is_binary(MatrixA) andalso is_binary(MatrixB) ->
-    DMatrixA = deserialize(MatrixA, UA),
-    DMatrixB = deserialize(MatrixB, UB),
-    cmp_helper(DMatrixA, DMatrixB);
-cmp({_UA, MatrixA}, {_UB, MatrixB}) ->
-    cmp_helper(MatrixA, MatrixB).
+-spec cmp(matrix(), matrix()) -> boolean().
+cmp(MatrixA, MatrixB) ->
+    lists:all(fun({I, J}) ->
+                      erlang_pbc:element_cmp(I, J)
+              end, lists:zip(elements(MatrixA), elements(MatrixB))).
 
 
 -spec t(matrix()) -> -1 | non_neg_integer().
@@ -103,7 +100,7 @@ serialize(#commitmentmatrix{t=T, elements=Elements}) ->
     BinElements = erlang_pbc:elements_to_binary(Elements),
     <<T:8/integer-signed, BinElements/binary>>.
 
--spec deserialize(matrix(), erlang_pbc:element()) -> matrix().
+-spec deserialize(Matrix :: matrix(), U :: erlang_pbc:element()) -> matrix().
 deserialize(<<T:8/integer-signed, BinElements/binary>>, U) ->
     Elements = erlang_pbc:binary_to_elements(U, BinElements),
     #commitmentmatrix{t=T, elements=Elements}.
@@ -171,11 +168,3 @@ public_key_shares(U, Matrix, NodeID) ->
                                           end, G1, lists:reverse(Row)),
                         erlang_pbc:element_mul(R, RowTotal)
                 end, G1, lists:reverse(rows(Matrix))).
-
--spec cmp_helper(matrix(), matrix()) -> boolean().
-cmp_helper(MatrixA, MatrixB) ->
-    io:format("MatrixA: ~p~n", [MatrixA]),
-    io:format("MatrixB: ~p~n", [MatrixB]),
-    lists:all(fun({I, J}) ->
-                      erlang_pbc:element_cmp(I, J)
-              end, lists:zip(elements(MatrixA), elements(MatrixB))).
