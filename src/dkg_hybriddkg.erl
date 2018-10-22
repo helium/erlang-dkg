@@ -37,7 +37,7 @@
           t :: pos_integer(),
           u :: binary(),
           u2 :: binary(),
-          vss_map :: #{pos_integer() => dkg_hybridvss:serialized_vss()},
+          vss_map :: vss_map(),
           vss_results = #{} :: serialized_vss_results(),
           qbar = [] :: qset(),
           qhat = [] :: qset(),
@@ -65,7 +65,6 @@
 -type rlq() :: #{identity() => [ready()]}.
 -type lc_map() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
 -type vss_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
--type serialized_vss_map() :: #{pos_integer() => dkg_hybridvss:serialized_vss()}.
 -type vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
 -type serialized_vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: binary()}}.
 -type dkg() :: #dkg{}.
@@ -501,13 +500,13 @@ deserialize(#serialized_dkg{id=Id,
          l_next=LNext,
          lc_map=LCMap}.
 
--spec serialize_vss_map(vss_map()) -> serialized_vss_map().
+-spec serialize_vss_map(vss_map()) -> vss_map().
 serialize_vss_map(VSSMap) ->
     maps:fold(fun(K, VSS, Acc) ->
                       maps:put(K, dkg_hybridvss:serialize(VSS), Acc)
               end, #{}, VSSMap).
 
--spec deserialize_vss_map(serialized_vss_map(), erlang_pbc:element()) -> vss_map().
+-spec deserialize_vss_map(vss_map(), erlang_pbc:element()) -> vss_map().
 deserialize_vss_map(SerializedVSSMap, Element) ->
     maps:fold(fun(K, VSS, Acc) ->
                       maps:put(K, dkg_hybridvss:deserialize(VSS, Element), Acc)

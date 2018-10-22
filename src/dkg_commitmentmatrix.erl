@@ -53,7 +53,7 @@ cmp(MatrixA, MatrixB) ->
 -spec t(matrix()) -> -1 | non_neg_integer().
 t(Matrix) -> Matrix#commitmentmatrix.t.
 
--spec elements(matrix()) -> [erlang_pbc:elements()].
+-spec elements(matrix()) -> [erlang_pbc:element()].
 elements(Matrix) -> Matrix#commitmentmatrix.elements.
 
 -spec mul(matrix(), matrix()) -> matrix().
