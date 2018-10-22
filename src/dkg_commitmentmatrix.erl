@@ -17,7 +17,7 @@
           elements :: [erlang_pbc:element()]
          }).
 
--type matrix() :: #commitmentmatrix{} | binary().
+-type matrix() :: #commitmentmatrix{}.
 
 -export_type([matrix/0]).
 
@@ -93,14 +93,14 @@ public_key_share(U, Matrix, NodeID) when is_binary(Matrix) ->
 public_key_share(U, Matrix, NodeID) ->
     public_key_shares(U, Matrix, NodeID).
 
--spec serialize(matrix()) -> matrix().
+-spec serialize(matrix()) -> binary().
 serialize(Matrix) when is_binary(Matrix) ->
     Matrix;
 serialize(#commitmentmatrix{t=T, elements=Elements}) ->
     BinElements = erlang_pbc:elements_to_binary(Elements),
     <<T:8/integer-signed, BinElements/binary>>.
 
--spec deserialize(Matrix :: matrix(), U :: erlang_pbc:element()) -> matrix().
+-spec deserialize(Matrix :: binary(), U :: erlang_pbc:element()) -> matrix().
 deserialize(<<T:8/integer-signed, BinElements/binary>>, U) ->
     Elements = erlang_pbc:binary_to_elements(U, BinElements),
     #commitmentmatrix{t=T, elements=Elements}.

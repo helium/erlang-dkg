@@ -65,7 +65,7 @@ run(Module, N, F, T, Curve, G1, G2) ->
     ct:pal("AllCommitments: ~p", [AllCommitments]),
     OutputCommitment = hd(AllCommitments),
 
-    DeserializedMatrix = dkg_commitmentmatrix:deserialize(dkg_commitment:matrix(OutputCommitment), dkg_commitment:generator(OutputCommitment)),
+    DeserializedMatrix = dkg_commitment:matrix(OutputCommitment),
     VerificationKey = dkg_commitmentmatrix:lookup([1, 1], DeserializedMatrix),
     true = erlang_pbc:element_cmp(VerificationKey, dkg_commitment:public_key_share(OutputCommitment, 0)),
     PublicKeyShares = [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- lists:seq(1, N)] ,
