@@ -123,23 +123,13 @@ rows(T, Elements, Acc) ->
                          VerifierID :: non_neg_integer(),
                          Point :: erlang_pbc:element()) -> boolean().
 check_verify_point(U, Matrix, SenderID, VerifierID, Point) ->
-    M = erlang_pbc:element_set(Point, SenderID),
-    I = erlang_pbc:element_set(Point, VerifierID),
-    G1 = erlang_pbc:element_set(U, 1),
-    erlang_pbc:element_pp_init(G1),
     Ga = erlang_pbc:element_pow(U, Point),
-    Res = lists:foldl(fun(Row, Acc) ->
-                              R = erlang_pbc:element_pow(Acc, M),
-                              RowTotal = lists:foldl(fun(J, Acc2) ->
-                                                        erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
-                                                end, G1, lists:reverse(Row)),
-                              erlang_pbc:element_mul(R, RowTotal)
-                      end, G1, lists:reverse(rows(Matrix))),
+    Res = poly_eval(Point, U, SenderID, VerifierID, Matrix),
     erlang_pbc:element_cmp(Ga, Res).
 
 -spec check_verify_poly(erlang_pbc:element(), matrix(), non_neg_integer(), dkg_polynomial:polynomial()) -> boolean().
 check_verify_poly(U, Matrix, VerifierID, Poly) ->
-    %% TODO obviously use something appropriate here
+    %% TODO obviously use something appropriate here, like what?
     I = erlang_pbc:element_set(hd(Poly), VerifierID),
     lists:foldl(fun(_L, false) ->
                         false;
@@ -153,18 +143,25 @@ check_verify_poly(U, Matrix, VerifierID, Poly) ->
 
 -spec public_key_shares(erlang_pbc:element(), matrix(), non_neg_integer()) -> erlang_pbc:element().
 public_key_shares(U, Matrix, NodeID) ->
-    %% TODO this shares significant code with verify_point, consider refactoring them to share common code
-    M = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), NodeID),
-    I = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
+    Point = erlang_pbc:element_new('Zr', U),
+    poly_eval(Point, U, NodeID, 0, Matrix).
+
+%% NOTE: I *think* that this _is_ poly_eval, who knows
+-spec poly_eval(Point :: erlang_pbc:element(),
+                U :: erlang_pbc:element(),
+                SenderID :: non_neg_integer(),
+                VerifierID :: non_neg_integer(),
+                Matrix :: matrix()) -> erlang_pbc:element().
+poly_eval(Point, U, SenderID, VerifierID, Matrix) ->
+    M = erlang_pbc:element_set(Point, SenderID),
+    I = erlang_pbc:element_set(Point, VerifierID),
     G1 = erlang_pbc:element_set(U, 1),
     erlang_pbc:element_pp_init(G1),
-
-    %% return the public key share
-    %% NOTE: C++ traverses the matrix in reverse, following the same
     lists:foldl(fun(Row, Acc) ->
                         R = erlang_pbc:element_pow(Acc, M),
                         RowTotal = lists:foldl(fun(J, Acc2) ->
-                                                  erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
-                                          end, G1, lists:reverse(Row)),
+                                                       erlang_pbc:element_mul(erlang_pbc:element_pow(Acc2, I), J)
+                                               end, G1, lists:reverse(Row)),
                         erlang_pbc:element_mul(R, RowTotal)
                 end, G1, lists:reverse(rows(Matrix))).
+

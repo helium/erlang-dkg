@@ -11,9 +11,8 @@
 interpolate(Poly, Indices, Alpha) ->
     Coefficients = coefficients(Indices, Alpha),
     Shares = [ dkg_polynomial:evaluate(Poly, Index)  || Index <- lists:seq(1, length(Indices)) ],
-    %% XXX: interpolate is done on G1 since the same group is used in the
+    %% NOTE: interpolate is done on G1 since the same group is used in the
     %% public_key_shares in the dkg_commitmentmatrix
-    %% TODO: maybe move the group to function call?
     dkg_lagrange:evaluate_g1(Coefficients, Shares).
 
 -spec coefficients(indices(), erlang_pbc:element()) -> dkg_polynomial:polynomial().
