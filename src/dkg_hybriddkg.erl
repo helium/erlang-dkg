@@ -284,7 +284,7 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
                          {mbar, Mbar} ->
                              NewDKG0#dkg{qbar=Q, mbar=Mbar}
                      end,
-            case count_leader_change(NewDKG) == T+F+1 andalso not NewDKG#dkg.lc_flag of
+            case count_leader_change(Lbar, NewDKG) == T+F+1 andalso not NewDKG#dkg.lc_flag of
                 true ->
                     case length(NewDKG#dkg.qbar) == 0 of
                         true ->
@@ -406,8 +406,10 @@ update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
             false
     end.
 
--spec count_leader_change(dkg()) -> non_neg_integer().
-count_leader_change(DKG) -> length(lists:flatten(maps:keys(DKG#dkg.lc_map))).
+-spec count_leader_change(pos_integer(), dkg()) -> non_neg_integer().
+count_leader_change(Lbar, DKG) ->
+    L = maps:get(Lbar, DKG#dkg.lc_map, []),
+    length(L).
 
 -spec store_leader_change(dkg(), pos_integer(), signed_leader_change()) -> {true, dkg()} | false.
 store_leader_change(DKG, Sender, {signed_leader_change, Lbar, _, _}=LeaderChangeMsg) ->
