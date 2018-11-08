@@ -28,6 +28,8 @@ do_send(_Mod, {_, ok}, Acc, States) ->
     {Acc, States};
 do_send(_Mod, {_, {send, []}}, Acc, States) ->
     {Acc, States};
+do_send(_Mod, {_, ignore}, Acc, States) ->
+    {Acc, States};
 do_send(Mod, {Id, {send, [{unicast, J, Msg}|T]}}, Acc, States) ->
     case lists:keyfind(J, 1, States) of
         false ->

@@ -25,8 +25,8 @@
           binary_matrix :: binary(),
           generator :: erlang_pbc:element(),
           nodes = [] :: [pos_integer()],
-          echoes = #{} :: #{pos_integer() => erlang_pbc:element()},
-          readies =#{} :: #{pos_integer() => erlang_pbc:element()}
+          echoes = #{} :: echoes(),
+          readies =#{} :: readies()
          }).
 
 -record(serialized_commitment, {
@@ -38,9 +38,11 @@
          }).
 
 -type commitment() :: #commitment{}.
+-type echoes() :: #{pos_integer() => erlang_pbc:element()}.
+-type readies() :: #{pos_integer() => erlang_pbc:element()}.
 -type serialized_commitment() :: #serialized_commitment{}.
 
--export_type([commitment/0, serialized_commitment/0]).
+-export_type([commitment/0, readies/0, serialized_commitment/0]).
 
 -spec new([pos_integer(),...], erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> commitment().
 new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
@@ -121,11 +123,11 @@ num_echoes(#commitment{echoes=Echoes}) ->
 num_readies(#commitment{readies=Readies}) ->
     maps:size(Readies).
 
--spec echoes(commitment()) -> #{pos_integer() => erlang_pbc:element()}.
+-spec echoes(commitment()) -> echoes().
 echoes(#commitment{echoes=Echoes}) ->
     Echoes.
 
--spec readies(commitment()) -> #{pos_integer() => erlang_pbc:element()}.
+-spec readies(commitment()) -> readies().
 readies(#commitment{readies=Readies}) ->
     Readies.
 

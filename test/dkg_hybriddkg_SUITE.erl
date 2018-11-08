@@ -69,7 +69,7 @@ leader_change_asymmetric_test(Config) ->
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0})),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, [])),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
 
@@ -105,7 +105,7 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     {ok, Sig} = tpke_pubkey:combine_signature_shares(PubKey, dealer:random_n(T+1, Signatures), MessageToSign),
     ?assert(tpke_pubkey:verify_signature(PubKey, Sig, MessageToSign)),
 
-    case erlang_pbc:element_cmp(G1, G2) of
+    case erlang_pbc:pairing_is_symmetric(G1) of
         true ->
             %% threshold decryption only works with symmetric curve
             Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),

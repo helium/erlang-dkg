@@ -1,6 +1,6 @@
 -module(dkg_hybriddkg).
 
--export([init/7,
+-export([init/8,
          start/1,
          serialize/1,
          deserialize/2,
@@ -57,7 +57,7 @@
 -type signed_leader_change() :: {signed_leader_change, pos_integer(), qset(), rhat() | mbar()}.
 -type signed_echo() :: {signed_echo, qset()}.
 -type signed_ready() :: {signed_ready, qset()}.
--type vss_ready() :: {signed_vss_ready, dkg_hybridvss:readies()}.
+-type vss_ready() :: {signed_vss_ready, dkg_commitment:readies()}.
 -type identity() :: {Leader :: pos_integer(), Q :: [pos_integer()]}.
 -type echo() :: {Sender :: pos_integer(), SignedEcho :: signed_echo()}.
 -type ready() :: {Sender :: pos_integer(), SignedReady :: signed_ready()}.
@@ -81,11 +81,13 @@
 %%      Lnext ← L + n − 1
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
-init(Id, N, F, T, G1, G2, Round) ->
+init(Id, N, F, T, G1, G2, Round, Options) ->
+    true = N >= (3*T + 2*F + 1),
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
+    Callback = proplists:get_value(callback, Options, false),
     VSSes = lists:foldl(fun(E, Map) ->
-                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}),
+                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
                                 maps:put(E, VSS, Map)
                         end, #{}, dkg_util:allnodes(N)),
 
@@ -107,6 +109,8 @@ start(DKG = #dkg{id=Id, u=G1}) ->
 
 handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
     case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
+        {_VSS, ignore} ->
+            {DKG, ignore};
         {NewVSS, ok} ->
             {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
         {NewVSS, {send, ToSend}} ->
@@ -144,7 +148,7 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
 %%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
 %%          send the message (L, τ, echo, Q)sign to each Pj
-handle_msg(DKG, _Sender, {send, Q, {rhat, _Rhat}}) ->
+handle_msg(DKG, _Sender, {send, Q, _RorM}) ->
     %% TODO verify signatures
     case length(DKG#dkg.qbar) == 0 orelse lists:usort(DKG#dkg.qbar) == lists:usort(Q) of
         true ->
@@ -325,9 +329,9 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
             {DKG, ok}
     end;
 handle_msg(DKG, _Sender, {signed_leader_change, _Lbar, _, _}) ->
-    {DKG, ok};
-handle_msg(DKG, _Sender, Msg) ->
-    {DKG, {unhandled_msg, Msg}}.
+    {DKG, ignore};
+handle_msg(DKG, _Sender, _Msg) ->
+    {DKG, ignore}.
 
 %% helper functions
 -spec output_commitment(#dkg{}) -> dkg_commitment:commitment().

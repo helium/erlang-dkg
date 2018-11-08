@@ -17,8 +17,8 @@ all() ->
 
 init_per_testcase(_, Config) ->
     N = list_to_integer(os:getenv("N", "10")),
-    F = (N - 1) div 3,
-    T = F,
+    T = ((N - 1) div 3) - 1,
+    F = 1,
     Module = dkg_hybriddkg,
     [{n, N}, {f, F}, {t, T}, {module, Module} | Config].
 
@@ -52,7 +52,7 @@ run(N, F, T, Curve, G1, G2) ->
     true = lists:all(fun(X) -> tpke_pubkey:serialize(X) == tpke_pubkey:serialize(hd(Keys)) end, Keys),
     PubKey = hd(Keys),
 
-    case erlang_pbc:element_cmp(G1, G2) of
+    case erlang_pbc:pairing_is_symmetric(G1) of
         true ->
             %% check threshold signatures work
             Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),

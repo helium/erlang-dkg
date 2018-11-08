@@ -17,8 +17,8 @@ all() ->
 
 init_per_testcase(_, Config) ->
     N = list_to_integer(os:getenv("N", "10")),
-    F = (N - 1) div 3,
-    T = F,
+    T = ((N - 1) div 3) - 1,
+    F = 1,
     Ph = 0,
     Module = dkg_hybridvss,
     [{n, N}, {f, F}, {module, Module}, {t, T}, {ph, Ph} | Config].
@@ -46,7 +46,7 @@ asymmetric_test(Config) ->
 
 run(Module, N, F, T, Curve, G1, G2) ->
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}) || Id <- lists:seq(1, N) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, false) || Id <- lists:seq(1, N) ],
 
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
 

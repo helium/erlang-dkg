@@ -11,5 +11,7 @@ wrap(_, []) ->
 wrap(Id, [{multicast, Msg}|T]) ->
     [{multicast, {Id, Msg}}|wrap(Id, T)];
 wrap(Id, [{unicast, Dest, Msg}|T]) ->
-    [{unicast, Dest, {Id, Msg}}|wrap(Id, T)].
+    [{unicast, Dest, {Id, Msg}}|wrap(Id, T)];
+wrap(Id, [{callback, Msg}|T]) ->
+    [{callback, {Id, Msg}}|wrap(Id, T)].
 
