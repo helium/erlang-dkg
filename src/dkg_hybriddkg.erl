@@ -16,18 +16,18 @@
           t :: pos_integer(),
           u :: erlang_pbc:element(),
           u2 :: erlang_pbc:element(),
-          vss_map = #{} :: vss_map(),
-          vss_results = #{} :: vss_results(),
-          qbar = [] :: qset(),
-          qhat = [] :: qset(),
-          rhat = [] :: rhat(),
-          mbar = [] :: mbar(),
-          elq = #{} :: elq(),
-          rlq = #{} :: rlq(),
-          lc_flag = false :: boolean(),
+          shares_map = #{} :: shares_map(),
+          shares_results = #{} :: shares_results(),
+          shares_seen = [] :: node_set(),
+          shares_acked = [] :: node_set(),
+          echo_proofs = [] :: echo_proofs(),
+          echo_counts = #{} :: echo_counts(),
+          ready_proofs = [] :: ready_proofs(),
+          ready_counts = #{} :: ready_counts(),
           leader :: pos_integer(),
-          l_next :: pos_integer(),
-          lc_map = #{} :: lc_map()
+          leader_cap :: pos_integer(),
+          leader_changing = false :: boolean(),
+          leader_vote_counts = #{} :: leader_vote_counts()
          }).
 
 -record(serialized_dkg, {
@@ -37,41 +37,52 @@
           t :: pos_integer(),
           u :: binary(),
           u2 :: binary(),
-          vss_map :: #{pos_integer() => dkg_hybridvss:serialized_vss()},
-          vss_results = #{} :: serialized_vss_results(),
-          qbar = [] :: qset(),
-          qhat = [] :: qset(),
-          rhat = [] :: rhat(),
-          mbar = [] :: mbar(),
-          elq = #{} :: elq(),
-          rlq = #{} :: rlq(),
-          lc_flag = false :: boolean(),
+          shares_map :: #{pos_integer() => dkg_hybridvss:serialized_vss()},
+          shares_results = #{} :: serialized_shares_results(),
+          shares_acked = [] :: node_set(),
+          shares_seen = [] :: node_set(),
+          echo_proofs = [] :: echo_proofs(),
+          echo_counts = #{} :: echo_counts(),
+          ready_proofs = [] :: ready_proofs(),
+          ready_counts = #{} :: ready_counts(),
+          leader_changing = false :: boolean(),
           leader :: pos_integer(),
-          l_next :: pos_integer(),
-          lc_map = #{} :: lc_map()
+          leader_cap :: pos_integer(),
+          leader_vote_counts = #{} :: leader_vote_counts()
          }).
 
--type rhat() :: [vss_ready()].
--type qset() :: [pos_integer()].
--type mbar() :: [signed_ready() | signed_echo()].
--type signed_leader_change() :: {signed_leader_change, pos_integer(), qset(), rhat() | mbar()}.
--type signed_echo() :: {signed_echo, qset()}.
--type signed_ready() :: {signed_ready, qset()}.
--type vss_ready() :: {signed_vss_ready, dkg_commitment:readies()}.
+-type ready_proofs() :: [shares_ready()].
+-type node_set() :: [pos_integer()].
+-type echo_proofs() :: [signed_ready() | signed_echo()].
+-type signed_leader_change() :: {signed_leader_change, pos_integer(), node_set(), ready_proofs() | echo_proofs()}.
+-type signed_echo() :: {signed_echo, node_set()}.
+-type signed_ready() :: {signed_ready, node_set()}.
+-type shares_ready() :: {signed_shares_ready, dkg_commitment:readies()}.
 -type identity() :: {Leader :: pos_integer(), Q :: [pos_integer()]}.
 -type echo() :: {Sender :: pos_integer(), SignedEcho :: signed_echo()}.
 -type ready() :: {Sender :: pos_integer(), SignedReady :: signed_ready()}.
--type elq() :: #{identity() => [echo()]}.
--type rlq() :: #{identity() => [ready()]}.
--type lc_map() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
--type vss_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
--type serialized_vss_map() :: #{pos_integer() => dkg_hybridvss:serialized_vss()}.
--type vss_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
--type serialized_vss_results() :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}}.
+-type echo_counts() :: #{identity() => [echo()]}.
+-type ready_counts() :: #{identity() => [ready()]}.
+-type leader_vote_counts() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
+-type shares_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
+-type serialized_shares_map() :: #{pos_integer() => dkg_hybridvss:serialized_vss()}.
+-type shares_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
+-type serialized_shares_results() :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}}.
 -type dkg() :: #dkg{}.
 -type serialized_dkg() :: #serialized_dkg{}.
 
 -export_type([dkg/0]).
+
+%% Glossary
+%% L -> Leader
+%% Lnext -> LeaderCap
+%% Q -> mostly contextual for recieved share info
+%% Qhat -> SharesSeen
+%% Qbar -> SharesAcked (by any leader)
+%% R/M -> Proofs (both are verified, only the verification step cares
+%%        which kind)
+%% Rhat -> ReadyProofs
+%% Mbar -> EchoProofs
 
 %% upon initialization:
 %%      e(L, Q) <- 0 and r(L, Q) <- 0 for every Q; Qbar <- ∅; Q <- ∅
@@ -86,36 +97,37 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
     Callback = proplists:get_value(callback, Options, false),
-    VSSes = lists:foldl(fun(E, Map) ->
-                                VSS = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
-                                maps:put(E, VSS, Map)
-                        end, #{}, dkg_util:allnodes(N)),
+    Shares = lists:foldl(fun(E, Map) ->
+                                 Share = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
+                                 Map#{E => Share}
+                         end, #{}, dkg_util:allnodes(N)),
 
-    #dkg{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=G1,
-         u2=G2,
-         leader=1,
-         l_next=l_next(1, N),
-         vss_map=VSSes}.
+    #dkg{id = Id,
+         n = N,
+         f = F,
+         t = T,
+         u = G1,
+         u2 = G2,
+         leader = 1,
+         leader_cap = leader_cap(1, N),
+         shares_map = Shares}.
 
 start(DKG = #dkg{id=Id, u=G1}) ->
-    MyVSS = maps:get(Id, DKG#dkg.vss_map),
+    #{Id := MyShares} = SharesMap = DKG#dkg.shares_map,
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
-    {NewVSS, {send, ToSend}} = dkg_hybridvss:input(MyVSS, Secret),
-    {DKG#dkg{vss_map=maps:put(Id, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, Id}, ToSend)}}.
+    {NewShares, {send, ToSend}} = dkg_hybridvss:input(MyShares, Secret),
+    {DKG#dkg{shares_map = SharesMap#{Id => NewShares}},
+     {send, dkg_util:wrap({shares, Id}, ToSend)}}.
 
-handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
-    case dkg_hybridvss:handle_msg(maps:get(VSSId, DKG#dkg.vss_map), Sender, VssMSG) of
-        {_VSS, ignore} ->
+handle_msg(DKG=#dkg{leader = Leader}, Sender, {{shares, SharesId}, SharesMsg}) ->
+    case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
+        {_Shares, ignore} ->
             {DKG, ignore};
-        {NewVSS, ok} ->
-            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, ok};
-        {NewVSS, {send, ToSend}} ->
-            {DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map)}, {send, dkg_util:wrap({vss, VSSId}, ToSend)}};
-        {NewVSS, {result, {_Session, Commitment, Si}}} ->
+        {NewShares, ok} ->
+            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
+        {NewShares, {send, ToSend}} ->
+            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, {send, dkg_util:wrap({shares, SharesId}, ToSend)}};
+        {NewShares, {result, {_Session, Commitment, Si}}} ->
             %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
             %%      Qhat ← {Pd}; Rhat ← {Rd}
             %%      if |Qhat| = t + 1 and Qbar = ∅ then
@@ -125,18 +137,18 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
             %%               delay ← delay(T); start timer(delay)
             %% TODO 'extended' VSS should output signed ready messages
 
-            NewDKG = DKG#dkg{vss_map=maps:put(VSSId, NewVSS, DKG#dkg.vss_map),
-                             vss_results=maps:put(VSSId, {Commitment, Si}, DKG#dkg.vss_results),
-                             qhat=[VSSId | DKG#dkg.qhat],
+            NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
+                             shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                             shares_seen = [SharesId | DKG#dkg.shares_seen],
                              %% XXX these readies are currently not signed
-                             rhat=[{signed_vss_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.rhat]
+                             ready_proofs = [{signed_shares_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.ready_proofs]
                             },
 
-            case length(NewDKG#dkg.qhat) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.qbar) == 0 of
+            case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
                 true ->
                     case NewDKG#dkg.id == Leader of
                         true ->
-                            {NewDKG, {send, [{multicast, {send, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]}};
+                            {NewDKG, {send, [{multicast, {send, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]}};
                         false ->
                             {NewDKG, start_timer}
                     end;
@@ -148,11 +160,12 @@ handle_msg(DKG=#dkg{leader=Leader}, Sender, {{vss, VSSId}, VssMSG}) ->
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
 %%      if verify-signature(Q, R/M) and (Qbar = ∅  or Qbar = Q) then
 %%          send the message (L, τ, echo, Q)sign to each Pj
-handle_msg(DKG, _Sender, {send, Q, _RorM}) ->
+handle_msg(DKG, _Sender, {send, SharesSent, _Proof}) ->
     %% TODO verify signatures
-    case length(DKG#dkg.qbar) == 0 orelse lists:usort(DKG#dkg.qbar) == lists:usort(Q) of
+    case length(DKG#dkg.shares_acked) == 0 orelse
+        lists:usort(DKG#dkg.shares_acked) == lists:usort(SharesSent) of
         true ->
-            {DKG, {send, [{multicast, {signed_echo, Q}}]}};
+            {DKG, {send, [{multicast, {signed_echo, SharesSent}}]}};
         false ->
             {DKG, ok}
     end;
@@ -162,19 +175,19 @@ handle_msg(DKG, _Sender, {send, Q, _RorM}) ->
 %%      if e(L,Q) = ceil((n+t+1)/2) and r(L,Q) < t + 1 then
 %%          Qbar ← Q; Mbar ← ceil((n+t+1)/2) signed echo messages for Q
 %%          send the message (L, τ, ready, Q)sign to each Pj
-handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Q}=EchoMsg) ->
-    case update_elq(DKG, Sender, EchoMsg) of
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Shares}=EchoMsg) ->
+    case update_echo_counts(DKG, Sender, EchoMsg) of
         false ->
             {DKG, ok};
         {true, NewDKG} ->
-            case count_echo(NewDKG, Q) == ceil((N+T+1)/2) andalso count_ready(NewDKG, Q) < T+1 of
+            case count_echo(NewDKG, Shares) == ceil((N+T+1)/2) andalso count_ready(NewDKG, Shares) < T+1 of
                 true ->
-                    %% update qbar
-                    NewQbar = Q,
-                    %% update mbar
-                    NewMbar = get_echo(NewDKG, Q),
+                    %% update shares_acked
+                    NewSharesAcked = Shares,
+                    %% update echo_proofs
+                    NewProofs = get_echo(NewDKG, Shares),
                     %% send ready message
-                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
+                    {NewDKG#dkg{shares_acked=NewSharesAcked, echo_proofs=NewProofs}, {send, [{multicast, {signed_ready, Shares}}]}};
                 false ->
                     {NewDKG, ok}
             end
@@ -191,16 +204,16 @@ handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Q}=EchoMsg) ->
 %%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
 %%          output (L, τ, DKG-completed, C, si)
 handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Q}=ReadyMsg) ->
-    case update_rlq(DKG, Sender, ReadyMsg) of
+    case update_ready_counts(DKG, Sender, ReadyMsg) of
         false ->
             {DKG, ok};
         {true, NewDKG} ->
             case count_ready(NewDKG, Q) == T+1 andalso count_echo(NewDKG, Q) < ceil((N+T+1)/2) of
                 true ->
-                    %% NOTE: qbar and mbar are new assignments here
-                    NewQbar = Q,
-                    NewMbar = get_ready(NewDKG, Q),
-                    {NewDKG#dkg{qbar=NewQbar, mbar=NewMbar}, {send, [{multicast, {signed_ready, Q}}]}};
+                    %% NOTE: shares_acked and echo_proofs are new assignments here
+                    NewSharesAcked = Q,
+                    NewProofs = get_ready(NewDKG, Q),
+                    {NewDKG#dkg{shares_acked=NewSharesAcked, echo_proofs=NewProofs}, {send, [{multicast, {signed_ready, Q}}]}};
                 false ->
                     case count_ready(NewDKG, Q) == N-T-F of
                         true ->
@@ -216,7 +229,7 @@ handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Q}=ReadyMsg
                     end
             end
     end;
-handle_msg(DKG, _Sender, {signed_ready, _VSSDone}=_ReadyMsg) ->
+handle_msg(DKG, _Sender, {signed_ready, _SharesDone}=_ReadyMsg) ->
     %% DKG received ready message from itself, what to do?
     {DKG, ok};
 
@@ -226,24 +239,24 @@ handle_msg(DKG, _Sender, {signed_ready, _VSSDone}=_ReadyMsg) ->
 %%          lcflag ← true; send msg (τ, lead-ch, L + 1, Qhat, Rhat)sign to each Pj
 %%      else
 %%          lcflag ← true; send msg (τ, lead-ch, L + 1, Qbar, Mbar)sign to each Pj
-handle_msg(DKG=#dkg{lc_flag=false,
-                    id=_Id,
-                    qbar=Qbar,
-                    qhat=Qhat,
-                    rhat=Rhat,
-                    mbar=Mbar,
-                    leader=CurrentLeader}, _Sender, timeout) ->
-    NewDKG = DKG#dkg{lc_flag=true},
+handle_msg(DKG=#dkg{leader_changing = false,
+                    id = _Id,
+                    shares_acked = SharesAcked,
+                    shares_seen = SharesSeen,
+                    ready_proofs = ReadyProofs,
+                    echo_proofs = EchoProofs,
+                    leader = CurrentLeader}, _Sender, timeout) ->
+    NewDKG = DKG#dkg{leader_changing=true},
 
-    Msg = case length(Qbar) == 0 of
+    Msg = case length(SharesAcked) == 0 of
               true ->
-                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qhat, {rhat, Rhat}}}]};
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, SharesSeen, {ready_proofs, ReadyProofs}}}]};
               false ->
-                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, Qbar, {mbar, Mbar}}}]}
+                  {send, [{multicast, {signed_leader_change, CurrentLeader+1, SharesAcked, {echo_proofs, EchoProofs}}}]}
           end,
     {NewDKG, Msg};
 handle_msg(DKG, _Sender, timeout) ->
-    %% lc_flag is true
+    %% leader_changing is true
     {DKG, ok};
 
 %% Leader-change for node Pi: session (τ ) and leader L
@@ -272,51 +285,52 @@ handle_msg(DKG, _Sender, timeout) ->
 %%          else
 %%              delay ← delay(T )
 %%              start timer(delay)
-handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next=LNext},
+handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
+                      ready_proofs=ReadyProofs0, leader_cap=LeaderCap},
            Sender,
-           {signed_leader_change, Lbar, Q, RorM}=LeaderChangeMsg) when Lbar > Leader ->
+           {signed_leader_change, ProposedLeader, Q, RorM}=LeaderChangeMsg) when ProposedLeader > Leader ->
     %% TODO: verify the signature(Q, R/M)
     case store_leader_change(DKG, Sender, LeaderChangeMsg) of
         {true, NewDKG0} ->
-            NewLNext = min(LNext, Lbar),
+            NewLeaderCap = min(LeaderCap, ProposedLeader),
             NewDKG = case RorM of
-                         {rhat, Rhat} ->
+                         {ready_proofs, ReadyProofs} ->
                              %% FIXME: do this better
-                             NewQhat = lists:usort(Qhat0 ++ Q),
-                             NewRhat = lists:usort(Rhat0 ++ Rhat),
-                             NewDKG0#dkg{qhat=NewQhat, rhat=NewRhat};
-                         {mbar, Mbar} ->
-                             NewDKG0#dkg{qbar=Q, mbar=Mbar}
+                             NewSharesSeen = lists:usort(SharesSeen0 ++ Q),
+                             NewReadyProofs = lists:usort(ReadyProofs0 ++ ReadyProofs),
+                             NewDKG0#dkg{shares_seen = NewSharesSeen, ready_proofs = NewReadyProofs};
+                         {echo_proofs, EchoProofs} ->
+                             NewDKG0#dkg{shares_acked=Q, echo_proofs=EchoProofs}
                      end,
-            case count_leader_change(Lbar, NewDKG) == T+F+1 andalso not NewDKG#dkg.lc_flag of
+            case count_leader_change(ProposedLeader, NewDKG) == T+F+1 andalso not NewDKG#dkg.leader_changing of
                 true ->
-                    case length(NewDKG#dkg.qbar) == 0 of
+                    case length(NewDKG#dkg.shares_acked) == 0 of
                         true ->
-                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qhat, {rhat, NewDKG#dkg.rhat}}}]};
+                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]};
                         false ->
-                            {send, [{multicast, {signed_leader_change, NewLNext, NewDKG#dkg.qbar, {mbar, NewDKG#dkg.mbar}}}]}
+                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_acked, {echo_proofs, NewDKG#dkg.echo_proofs}}}]}
                     end;
                 false ->
-                    LeaderChangeMsgs = maps:get(Lbar, NewDKG#dkg.lc_map, []),
+                    LeaderChangeMsgs = maps:get(ProposedLeader, NewDKG#dkg.leader_vote_counts, []),
                     case length(LeaderChangeMsgs) == N-T-F of
                         true ->
-                            NewerMbar = NewerRhat = LeaderChangeMsgs,
-                            NewLeader = Lbar,
-                            NewerLNext = l_next(Leader, N),
-                            NewLeaderChangeMap = maps:put(NewLeader, [], NewDKG#dkg.lc_map),
-                            NewerDKG = NewDKG#dkg{lc_flag=false,
-                                                  mbar=NewerMbar,
-                                                  rhat=NewerRhat,
+                            NewerProofs = NewerReadyProofs = LeaderChangeMsgs,
+                            NewLeader = ProposedLeader,
+                            NewerLeaderCap = leader_cap(Leader, N),
+                            NewLeaderChangeMap = maps:put(NewLeader, [], NewDKG#dkg.leader_vote_counts),
+                            NewerDKG = NewDKG#dkg{leader_changing=false,
+                                                  echo_proofs=NewerProofs,
+                                                  ready_proofs=NewerReadyProofs,
                                                   leader=NewLeader,
-                                                  l_next=NewerLNext,
-                                                  lc_map=NewLeaderChangeMap},
+                                                  leader_cap=NewerLeaderCap,
+                                                  leader_vote_counts=NewLeaderChangeMap},
                             case DKG#dkg.id == NewLeader of
                                 true ->
-                                    case length(NewerDKG#dkg.qbar) == 0 of
+                                    case length(NewerDKG#dkg.shares_acked) == 0 of
                                         true ->
-                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qhat, {rhat, NewerDKG#dkg.rhat}}}]}};
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.shares_seen, {ready_proofs, NewerDKG#dkg.ready_proofs}}}]}};
                                         false ->
-                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.qbar, {mbar, NewerDKG#dkg.mbar}}}]}}
+                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.shares_acked, {echo_proofs, NewerDKG#dkg.echo_proofs}}}]}}
                                     end;
                                 false ->
                                     {NewerDKG, start_timer}
@@ -328,14 +342,14 @@ handle_msg(DKG=#dkg{leader=Leader, t=T, n=N, f=F, qhat=Qhat0, rhat=Rhat0, l_next
         false ->
             {DKG, ok}
     end;
-handle_msg(DKG, _Sender, {signed_leader_change, _Lbar, _, _}) ->
+handle_msg(DKG, _Sender, {signed_leader_change, _ProposedLeader, _, _}) ->
     {DKG, ignore};
 handle_msg(DKG, _Sender, _Msg) ->
     {DKG, ignore}.
 
 %% helper functions
 -spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
-output_commitment(_DKG=#dkg{vss_results=R, u2=U2, t=T, n=N}) ->
+output_commitment(_DKG=#dkg{shares_results=R, u2=U2, t=T, n=N}) ->
     maps:fold(fun(_K, {Commitment, _}, Acc) ->
                       dkg_commitment:mul(Commitment, Acc)
               end, dkg_commitment:new(lists:seq(1, N), U2, T), R).
@@ -349,14 +363,14 @@ verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
 -spec shard(#dkg{}) -> erlang_pbc:element().
-shard(_DKG=#dkg{vss_results=R, u=U}) ->
+shard(_DKG=#dkg{shares_results=R, u=U}) ->
     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
     maps:fold(fun(_K, {_, Si}, Acc) ->
                         erlang_pbc:element_add(Acc, Si)
               end, Zero, R).
 
--spec l_next(pos_integer(), pos_integer()) -> pos_integer().
-l_next(L, N) ->
+-spec leader_cap(pos_integer(), pos_integer()) -> pos_integer().
+leader_cap(L, N) ->
     case L - 1 < 1 of
         true ->
             N;
@@ -364,46 +378,46 @@ l_next(L, N) ->
             L - 1
     end.
 
--spec count_echo(dkg(), qset()) -> non_neg_integer().
-count_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
+-spec count_echo(dkg(), node_set()) -> non_neg_integer().
+count_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
-    length(maps:get({Leader, Q}, Elq, [])).
+    length(maps:get({Leader, Q}, EchoCount, [])).
 
--spec get_echo(dkg(), qset()) -> [echo()].
-get_echo(_DKG=#dkg{elq=Elq, leader=Leader}, Q0) ->
+-spec get_echo(dkg(), node_set()) -> [echo()].
+get_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
-    maps:get({Leader, Q}, Elq, []).
+    maps:get({Leader, Q}, EchoCount, []).
 
--spec update_elq(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
-update_elq(DKG=#dkg{elq=Elq}, Sender, {signed_echo, Q0}=EchoMsg) ->
+-spec update_echo_counts(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
+update_echo_counts(DKG=#dkg{echo_counts=EchoCount}, Sender, {signed_echo, Q0}=EchoMsg) ->
     Q = lists:usort(Q0),
-    EchoForQAndLeader = maps:get({DKG#dkg.leader, Q}, Elq, []),
+    EchoForQAndLeader = maps:get({DKG#dkg.leader, Q}, EchoCount, []),
     case lists:keyfind(Sender, 1, EchoForQAndLeader) of
         false ->
-            NewDKG = DKG#dkg{elq=maps:put({DKG#dkg.leader, Q}, [{Sender, EchoMsg} | EchoForQAndLeader], Elq)},
+            NewDKG = DKG#dkg{echo_counts=maps:put({DKG#dkg.leader, Q}, [{Sender, EchoMsg} | EchoForQAndLeader], EchoCount)},
             {true, NewDKG};
         _ ->
             %% already have this echo
             false
     end.
 
--spec count_ready(dkg(), qset()) -> non_neg_integer().
-count_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
+-spec count_ready(dkg(), node_set()) -> non_neg_integer().
+count_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
-    length(maps:get({Leader, Q}, Rlq, [])).
+    length(maps:get({Leader, Q}, ReadyCounts, [])).
 
--spec get_ready(dkg(), qset()) -> [ready()].
-get_ready(_DKG=#dkg{rlq=Rlq, leader=Leader}, Q0) ->
+-spec get_ready(dkg(), node_set()) -> [ready()].
+get_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Q0) ->
     Q = lists:usort(Q0),
-    maps:get({Leader, Q}, Rlq, []).
+    maps:get({Leader, Q}, ReadyCounts, []).
 
--spec update_rlq(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
-update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
+-spec update_ready_counts(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
+update_ready_counts(DKG=#dkg{ready_counts=ReadyCounts}, Sender, {signed_ready, Q0}=ReadyMsg) ->
     Q = lists:usort(Q0),
-    ReadyForQAndLeader = maps:get({DKG#dkg.leader, Q}, Rlq, []),
+    ReadyForQAndLeader = maps:get({DKG#dkg.leader, Q}, ReadyCounts, []),
     case lists:keyfind(Sender, 1, ReadyForQAndLeader) of
         false ->
-            NewDKG = DKG#dkg{rlq=maps:put({DKG#dkg.leader, Q}, [{Sender, ReadyMsg} | ReadyForQAndLeader], Rlq)},
+            NewDKG = DKG#dkg{ready_counts=maps:put({DKG#dkg.leader, Q}, [{Sender, ReadyMsg} | ReadyForQAndLeader], ReadyCounts)},
             {true, NewDKG};
         _ ->
             %% already have this echo
@@ -411,17 +425,17 @@ update_rlq(DKG=#dkg{rlq=Rlq}, Sender, {signed_ready, Q0}=ReadyMsg) ->
     end.
 
 -spec count_leader_change(pos_integer(), dkg()) -> non_neg_integer().
-count_leader_change(Lbar, DKG) ->
-    L = maps:get(Lbar, DKG#dkg.lc_map, []),
+count_leader_change(NextLeader, DKG) ->
+    L = maps:get(NextLeader, DKG#dkg.leader_vote_counts, []),
     length(L).
 
 -spec store_leader_change(dkg(), pos_integer(), signed_leader_change()) -> {true, dkg()} | false.
-store_leader_change(DKG, Sender, {signed_leader_change, Lbar, _, _}=LeaderChangeMsg) ->
-    L = maps:get(Lbar, DKG#dkg.lc_map, []),
+store_leader_change(DKG, Sender, {signed_leader_change, ProposedLeader, _, _}=LeaderChangeMsg) ->
+    L = maps:get(ProposedLeader, DKG#dkg.leader_vote_counts, []),
     case lists:keyfind(Sender, 1, L) of
         false ->
-            NewLCM = maps:put(Lbar, lists:keystore(Sender, 1, L, {Sender, LeaderChangeMsg}), DKG#dkg.lc_map),
-            {true, DKG#dkg{lc_map=NewLCM}};
+            NewLCM = maps:put(ProposedLeader, lists:keystore(Sender, 1, L, {Sender, LeaderChangeMsg}), DKG#dkg.leader_vote_counts),
+            {true, DKG#dkg{leader_vote_counts=NewLCM}};
         _ ->
             false
     end.
@@ -433,36 +447,36 @@ serialize(#dkg{id=Id,
                t=T,
                u=U,
                u2=U2,
-               vss_map=VSSMap,
-               vss_results=VSSResults,
-               qbar=Qbar,
-               qhat=Qhat,
-               rhat=Rhat,
-               mbar=Mbar,
-               elq=Elq,
-               rlq=Rlq,
-               lc_flag=LCFlag,
+               shares_map=SharesMap,
+               shares_results=SharesResults,
+               shares_acked=SharesAcked,
+               shares_seen=SharesSeen,
+               ready_proofs=ReadyProofs,
+               echo_proofs=Echo_Proofs,
+               echo_counts=EchoCount,
+               ready_counts=ReadyCounts,
+               leader_changing=LeaderChanging,
                leader=Leader,
-               l_next=LNext,
-               lc_map=LCMap}) ->
+               leader_cap=LeaderCap,
+               leader_vote_counts=LeaderVoteCounts}) ->
     #serialized_dkg{id=Id,
                     n=N,
                     f=F,
                     t=T,
                     u=erlang_pbc:element_to_binary(U),
                     u2=erlang_pbc:element_to_binary(U2),
-                    vss_map=serialize_vss_map(VSSMap),
-                    vss_results=serialize_vss_results(VSSResults),
-                    qbar=Qbar,
-                    qhat=Qhat,
-                    rhat=Rhat,
-                    mbar=Mbar,
-                    elq=Elq,
-                    rlq=Rlq,
-                    lc_flag=LCFlag,
+                    shares_map=serialize_shares_map(SharesMap),
+                    shares_results=serialize_shares_results(SharesResults),
+                    shares_seen=SharesSeen,
+                    shares_acked=SharesAcked,
+                    ready_proofs=ReadyProofs,
+                    echo_proofs=Echo_Proofs,
+                    echo_counts=EchoCount,
+                    ready_counts=ReadyCounts,
+                    leader_changing=LeaderChanging,
                     leader=Leader,
-                    l_next=LNext,
-                    lc_map=LCMap}.
+                    leader_cap=LeaderCap,
+                    leader_vote_counts=LeaderVoteCounts}.
 
 -spec deserialize(serialized_dkg(), erlang_pbc:element()) -> dkg().
 deserialize(#serialized_dkg{id=Id,
@@ -471,84 +485,84 @@ deserialize(#serialized_dkg{id=Id,
                             t=T,
                             u=SerializedU,
                             u2=SerializedU2,
-                            vss_map=SerializedVSSMap,
-                            vss_results=SerializedVSSResults,
-                            qbar=Qbar,
-                            qhat=Qhat,
-                            rhat=Rhat,
-                            mbar=Mbar,
-                            elq=Elq,
-                            rlq=Rlq,
-                            lc_flag=LCFlag,
+                            shares_map=SerializedSharesMap,
+                            shares_results=SerializedSharesResults,
+                            shares_acked=SharesAcked,
+                            shares_seen=SharesSeen,
+                            ready_proofs=ReadyProofs,
+                            echo_proofs=Echo_Proofs,
+                            echo_counts=EchoCount,
+                            ready_counts=ReadyCounts,
+                            leader_changing=LeaderChanging,
                             leader=Leader,
-                            l_next=LNext,
+                            leader_cap=LeaderCap,
                             %% XXX: Only one element is enough?
                             %% presumably we need to generate U and U2 again to deserialize? Not sure...
-                            lc_map=LCMap}, Element) ->
+                            leader_vote_counts=LeaderVoteCounts}, Element) ->
     #dkg{id=Id,
          n=N,
          f=F,
          t=T,
          u=erlang_pbc:binary_to_element(Element, SerializedU),
          u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         vss_map=deserialize_vss_map(SerializedVSSMap, Element),
-         vss_results=deserialize_vss_results(SerializedVSSResults, Element),
-         qbar=Qbar,
-         qhat=Qhat,
-         rhat=Rhat,
-         mbar=Mbar,
-         elq=Elq,
-         rlq=Rlq,
-         lc_flag=LCFlag,
+         shares_map=deserialize_shares_map(SerializedSharesMap, Element),
+         shares_results=deserialize_shares_results(SerializedSharesResults, Element),
+         shares_acked=SharesAcked,
+         shares_seen=SharesSeen,
+         ready_proofs=ReadyProofs,
+         echo_proofs=Echo_Proofs,
+         echo_counts=EchoCount,
+         ready_counts=ReadyCounts,
+         leader_changing=LeaderChanging,
          leader=Leader,
-         l_next=LNext,
-         lc_map=LCMap}.
+         leader_cap=LeaderCap,
+         leader_vote_counts=LeaderVoteCounts}.
 
--spec serialize_vss_map(vss_map()) -> serialized_vss_map().
-serialize_vss_map(VSSMap) ->
-    maps:fold(fun(K, VSS, Acc) ->
-                      maps:put(K, dkg_hybridvss:serialize(VSS), Acc)
-              end, #{}, VSSMap).
+-spec serialize_shares_map(shares_map()) -> serialized_shares_map().
+serialize_shares_map(SharesMap) ->
+    maps:fold(fun(K, Shares, Acc) ->
+                      maps:put(K, dkg_hybridvss:serialize(Shares), Acc)
+              end, #{}, SharesMap).
 
--spec deserialize_vss_map(serialized_vss_map(), erlang_pbc:element()) -> vss_map().
-deserialize_vss_map(SerializedVSSMap, Element) ->
-    maps:fold(fun(K, VSS, Acc) ->
-                      maps:put(K, dkg_hybridvss:deserialize(VSS, Element), Acc)
-              end, #{}, SerializedVSSMap).
+-spec deserialize_shares_map(serialized_shares_map(), erlang_pbc:element()) -> shares_map().
+deserialize_shares_map(SerializedSharesMap, Element) ->
+    maps:fold(fun(K, Shares, Acc) ->
+                      maps:put(K, dkg_hybridvss:deserialize(Shares, Element), Acc)
+              end, #{}, SerializedSharesMap).
 
--spec serialize_vss_results(vss_results()) -> serialized_vss_results().
-serialize_vss_results(VSSResults) ->
+-spec serialize_shares_results(shares_results()) -> serialized_shares_results().
+serialize_shares_results(SharesResults) ->
     maps:fold(fun(K, {C, Si}, Acc) ->
                       maps:put(K, {dkg_commitment:serialize(C), erlang_pbc:element_to_binary(Si)}, Acc)
-              end, #{}, VSSResults).
+              end, #{}, SharesResults).
 
--spec deserialize_vss_results(serialized_vss_results(), erlang_pbc:element()) -> vss_results().
-deserialize_vss_results(SerializedVSSResults, U) ->
+-spec deserialize_shares_results(serialized_shares_results(), erlang_pbc:element()) -> shares_results().
+deserialize_shares_results(SerializedSharesResults, U) ->
     maps:fold(fun(K, {C, Si}, Acc) ->
                       maps:put(K, {dkg_commitment:deserialize(C, U), erlang_pbc:binary_to_element(U, Si)}, Acc)
-              end, #{}, SerializedVSSResults).
+              end, #{}, SerializedSharesResults).
 
 -spec status(dkg()) -> map().
 status(DKG) ->
     #{id => DKG#dkg.id,
-      vss_map => maps:map(fun(_K, VSS) -> dkg_hybridvss:status(VSS) end, DKG#dkg.vss_map),
-      vss_results_from => maps:keys(DKG#dkg.vss_results),
+      shares_map => maps:map(fun(_K, Shares) -> dkg_hybridvss:status(Shares) end, DKG#dkg.shares_map),
+      shares_results_from => maps:keys(DKG#dkg.shares_results),
       echoes_required => ceil(( DKG#dkg.n + DKG#dkg.t + 1 )/2),
       echoes_detail => maps:map(fun(_K, Echoes) ->
                                         lists:foldl(fun({Sender, {signed_echo, Q}}, Acc) ->
                                                             [#{sender => Sender,
-                                                               echo_count => count_echo(DKG, Q),
+                                                               echo_counts => count_echo(DKG, Q),
                                                                echo => lists:sort([X || {X, _} <- get_echo(DKG, Q)])} | Acc]
                                                     end, [], Echoes)
-                                end, DKG#dkg.elq),
+                                end, DKG#dkg.echo_counts),
       readies_details => maps:map(fun(_K, Readies) ->
                                           lists:foldl(fun({Sender, {signed_ready, Q}}, Acc) ->
                                                               [#{sender => Sender,
-                                                                 ready_count => count_ready(DKG, Q),
+                                                                 ready_counts => count_ready(DKG, Q),
                                                                  ready => lists:sort([X || {X, _} <- get_ready(DKG, Q)])} | Acc]
                                                       end, [], Readies)
-                                  end, DKG#dkg.rlq),
+                                  end, DKG#dkg.ready_counts),
       readies_required => (DKG#dkg.t + 1),
-      lc_flag => DKG#dkg.lc_flag,
+      leader_changing => DKG#dkg.leader_changing,
       leader => DKG#dkg.leader,
-      l_next => DKG#dkg.l_next}.
+      leader_cap => DKG#dkg.leader_cap}.
