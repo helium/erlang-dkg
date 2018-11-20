@@ -117,7 +117,7 @@ start(DKG = #dkg{id=Id, u=G1}) ->
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
     {NewShares, {send, ToSend}} = dkg_hybridvss:input(MyShares, Secret),
     {DKG#dkg{shares_map = SharesMap#{Id => NewShares}},
-     {send, dkg_util:wrap({shares, Id}, ToSend)}}.
+     {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
 handle_msg(DKG=#dkg{leader = Leader}, Sender, {{shares, SharesId}, SharesMsg}) ->
     case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
@@ -126,7 +126,7 @@ handle_msg(DKG=#dkg{leader = Leader}, Sender, {{shares, SharesId}, SharesMsg}) -
         {NewShares, ok} ->
             {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
         {NewShares, {send, ToSend}} ->
-            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, {send, dkg_util:wrap({shares, SharesId}, ToSend)}};
+            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
         {NewShares, {result, {_Session, Commitment, Si}}} ->
             %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
             %%      Qhat ← {Pd}; Rhat ← {Rd}
