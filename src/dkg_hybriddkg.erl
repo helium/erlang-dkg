@@ -288,19 +288,19 @@ handle_msg(DKG, _Sender, timeout) ->
 handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
                       ready_proofs=ReadyProofs0, leader_cap=LeaderCap},
            Sender,
-           {signed_leader_change, ProposedLeader, Q, RorM}=LeaderChangeMsg) when ProposedLeader > Leader ->
+           {signed_leader_change, ProposedLeader, Shares, Proofs}=LeaderChangeMsg) when ProposedLeader > Leader ->
     %% TODO: verify the signature(Q, R/M)
     case store_leader_change(DKG, Sender, LeaderChangeMsg) of
         {true, NewDKG0} ->
             NewLeaderCap = min(LeaderCap, ProposedLeader),
-            NewDKG = case RorM of
+            NewDKG = case Proofs of
                          {ready_proofs, ReadyProofs} ->
                              %% FIXME: do this better
-                             NewSharesSeen = lists:usort(SharesSeen0 ++ Q),
+                             NewSharesSeen = lists:usort(SharesSeen0 ++ Shares),
                              NewReadyProofs = lists:usort(ReadyProofs0 ++ ReadyProofs),
                              NewDKG0#dkg{shares_seen = NewSharesSeen, ready_proofs = NewReadyProofs};
                          {echo_proofs, EchoProofs} ->
-                             NewDKG0#dkg{shares_acked=Q, echo_proofs=EchoProofs}
+                             NewDKG0#dkg{shares_acked = Shares, echo_proofs = EchoProofs}
                      end,
             case count_leader_change(ProposedLeader, NewDKG) == T+F+1 andalso not NewDKG#dkg.leader_changing of
                 true ->
@@ -379,22 +379,22 @@ leader_cap(L, N) ->
     end.
 
 -spec count_echo(dkg(), node_set()) -> non_neg_integer().
-count_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Q0) ->
-    Q = lists:usort(Q0),
-    length(maps:get({Leader, Q}, EchoCount, [])).
+count_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Shares0) ->
+    Shares = lists:usort(Shares0),
+    length(maps:get({Leader, Shares}, EchoCount, [])).
 
 -spec get_echo(dkg(), node_set()) -> [echo()].
-get_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Q0) ->
-    Q = lists:usort(Q0),
-    maps:get({Leader, Q}, EchoCount, []).
+get_echo(_DKG=#dkg{echo_counts=EchoCount, leader=Leader}, Shares0) ->
+    Shares = lists:usort(Shares0),
+    maps:get({Leader, Shares}, EchoCount, []).
 
 -spec update_echo_counts(dkg(), pos_integer(), signed_echo()) -> {true, dkg()} | false.
-update_echo_counts(DKG=#dkg{echo_counts=EchoCount}, Sender, {signed_echo, Q0}=EchoMsg) ->
-    Q = lists:usort(Q0),
-    EchoForQAndLeader = maps:get({DKG#dkg.leader, Q}, EchoCount, []),
+update_echo_counts(DKG=#dkg{echo_counts=EchoCount}, Sender, {signed_echo, Shares0}=EchoMsg) ->
+    Shares = lists:usort(Shares0),
+    EchoForQAndLeader = maps:get({DKG#dkg.leader, Shares}, EchoCount, []),
     case lists:keyfind(Sender, 1, EchoForQAndLeader) of
         false ->
-            NewDKG = DKG#dkg{echo_counts=maps:put({DKG#dkg.leader, Q}, [{Sender, EchoMsg} | EchoForQAndLeader], EchoCount)},
+            NewDKG = DKG#dkg{echo_counts=maps:put({DKG#dkg.leader, Shares}, [{Sender, EchoMsg} | EchoForQAndLeader], EchoCount)},
             {true, NewDKG};
         _ ->
             %% already have this echo
@@ -402,22 +402,22 @@ update_echo_counts(DKG=#dkg{echo_counts=EchoCount}, Sender, {signed_echo, Q0}=Ec
     end.
 
 -spec count_ready(dkg(), node_set()) -> non_neg_integer().
-count_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Q0) ->
-    Q = lists:usort(Q0),
-    length(maps:get({Leader, Q}, ReadyCounts, [])).
+count_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Shares0) ->
+    Shares = lists:usort(Shares0),
+    length(maps:get({Leader, Shares}, ReadyCounts, [])).
 
 -spec get_ready(dkg(), node_set()) -> [ready()].
-get_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Q0) ->
-    Q = lists:usort(Q0),
-    maps:get({Leader, Q}, ReadyCounts, []).
+get_ready(_DKG=#dkg{ready_counts=ReadyCounts, leader=Leader}, Shares0) ->
+    Shares = lists:usort(Shares0),
+    maps:get({Leader, Shares}, ReadyCounts, []).
 
 -spec update_ready_counts(dkg(), pos_integer(), signed_ready()) -> {true, dkg()} | false.
-update_ready_counts(DKG=#dkg{ready_counts=ReadyCounts}, Sender, {signed_ready, Q0}=ReadyMsg) ->
-    Q = lists:usort(Q0),
-    ReadyForQAndLeader = maps:get({DKG#dkg.leader, Q}, ReadyCounts, []),
-    case lists:keyfind(Sender, 1, ReadyForQAndLeader) of
+update_ready_counts(DKG=#dkg{ready_counts=ReadyCounts}, Sender, {signed_ready, Shares0}=ReadyMsg) ->
+    Shares = lists:usort(Shares0),
+    ReadyForSharesAndLeader = maps:get({DKG#dkg.leader, Shares}, ReadyCounts, []),
+    case lists:keyfind(Sender, 1, ReadyForSharesAndLeader) of
         false ->
-            NewDKG = DKG#dkg{ready_counts=maps:put({DKG#dkg.leader, Q}, [{Sender, ReadyMsg} | ReadyForQAndLeader], ReadyCounts)},
+            NewDKG = DKG#dkg{ready_counts=maps:put({DKG#dkg.leader, Shares}, [{Sender, ReadyMsg} | ReadyForSharesAndLeader], ReadyCounts)},
             {true, NewDKG};
         _ ->
             %% already have this echo
@@ -549,17 +549,17 @@ status(DKG) ->
       shares_results_from => maps:keys(DKG#dkg.shares_results),
       echoes_required => ceil(( DKG#dkg.n + DKG#dkg.t + 1 )/2),
       echoes_detail => maps:map(fun(_K, Echoes) ->
-                                        lists:foldl(fun({Sender, {signed_echo, Q}}, Acc) ->
+                                        lists:foldl(fun({Sender, {signed_echo, Shares}}, Acc) ->
                                                             [#{sender => Sender,
-                                                               echo_counts => count_echo(DKG, Q),
-                                                               echo => lists:sort([X || {X, _} <- get_echo(DKG, Q)])} | Acc]
+                                                               echo_counts => count_echo(DKG, Shares),
+                                                               echo => lists:sort([X || {X, _} <- get_echo(DKG, Shares)])} | Acc]
                                                     end, [], Echoes)
                                 end, DKG#dkg.echo_counts),
       readies_details => maps:map(fun(_K, Readies) ->
-                                          lists:foldl(fun({Sender, {signed_ready, Q}}, Acc) ->
+                                          lists:foldl(fun({Sender, {signed_ready, Shares}}, Acc) ->
                                                               [#{sender => Sender,
-                                                                 ready_counts => count_ready(DKG, Q),
-                                                                 ready => lists:sort([X || {X, _} <- get_ready(DKG, Q)])} | Acc]
+                                                                 ready_counts => count_ready(DKG, Shares),
+                                                                 ready => lists:sort([X || {X, _} <- get_ready(DKG, Shares)])} | Acc]
                                                       end, [], Readies)
                                   end, DKG#dkg.ready_counts),
       readies_required => (DKG#dkg.t + 1),
