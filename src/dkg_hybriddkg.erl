@@ -119,7 +119,7 @@ start(DKG = #dkg{id=Id, u=G1}) ->
     {DKG#dkg{shares_map = SharesMap#{Id => NewShares}},
      {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
-handle_msg(DKG=#dkg{leader = Leader}, Sender, {{shares, SharesId}, SharesMsg}) ->
+handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
     case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
         {_Shares, ignore} ->
             {DKG, ignore};
