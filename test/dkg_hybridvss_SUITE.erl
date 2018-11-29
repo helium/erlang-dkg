@@ -6,13 +6,17 @@
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
          symmetric_test/1,
-         asymmetric_test/1
+         asymmetric_test/1,
+         fake_symmetric/1,
+         fake_asymmetric/1
         ]).
 
 all() ->
     [
      symmetric_test,
-     asymmetric_test
+     asymmetric_test,
+     fake_symmetric,
+     fake_asymmetric
     ].
 
 init_per_testcase(_, Config) ->
@@ -44,6 +48,27 @@ asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate(Curve),
     run(Module, N, F, T, Curve, G1, G2).
 
+%% placeholder name
+fake_symmetric(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Module = proplists:get_value(module, Config),
+    Curve = 'SS512',
+    {G1, G2} = dkg_test_utils:generate(Curve),
+    ok = run_fake(Module, N, F, T, Curve, G1, G2),
+    ok = run_fake(Module, N, F, T, Curve, G1, G2).
+
+fake_asymmetric(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Module = proplists:get_value(module, Config),
+    Curve = 'MNT224',
+    {G1, G2} = dkg_test_utils:generate(Curve),
+    ok = run_fake(Module, N, F, T, Curve, G1, G2),
+    ok = run_fake(Module, N, F, T, Curve, G1, G2).
+
 run(Module, N, F, T, Curve, G1, G2) ->
 
     [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, false) || Id <- lists:seq(1, N) ],
@@ -55,6 +80,21 @@ run(Module, N, F, T, Curve, G1, G2) ->
     States = [NewDealerState | Rest],
     StatesWithId = lists:zip(lists:seq(1, length(States)), States),
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
+    verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2).
+
+run_fake(_Module, N, F, T, Curve, G1, G2) ->
+
+    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+
+    {ok, Results} = fakecast:start_test(dkg_vss_fakecast, TestArgs, os:timestamp(), [{1, Secret}]),
+
+    ct:pal("results ~p", [Results]),
+
+    verify_results(Secret, Results, N, F, T, Curve, G1, G2).
+
+verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2) ->
 
     %% check that the shares from nodes can be interpolated to calculate the original secret back
     NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share}}}, Acc) ->

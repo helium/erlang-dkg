@@ -163,6 +163,14 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session, done=false}, Sender, {echo
         true ->
             case dkg_commitment:add_echo(Commitment, Sender, A) of
                 {true, NewCommitment} ->
+                    case Id of
+                        1 ->
+                            ct:pal("sender ~p echoes ~p readies ~p",
+                                   [Sender,
+                                    dkg_commitment:num_echoes(NewCommitment),
+                                    dkg_commitment:num_readies(NewCommitment)]);
+                        _ -> meh
+                    end,
                     case dkg_commitment:num_echoes(NewCommitment) == ceil((N+T+1)/2) andalso
                          dkg_commitment:num_readies(NewCommitment) < (T+1) of
                         true ->
