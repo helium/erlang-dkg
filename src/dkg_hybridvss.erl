@@ -1,5 +1,7 @@
 -module(dkg_hybridvss).
 
+-include_lib("kernel/include/logger.hrl").
+
 -export([init/8]).
 
 -export([input/2,
@@ -165,7 +167,8 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session, done=false}, Sender, {echo
                 {true, NewCommitment} ->
                     case Id of
                         1 ->
-                            ct:pal("sender ~p echoes ~p readies ~p",
+                            ?LOG_INFO
+("sender ~p echoes ~p readies ~p",
                                    [Sender,
                                     dkg_commitment:num_echoes(NewCommitment),
                                     dkg_commitment:num_readies(NewCommitment)]);
@@ -240,6 +243,14 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
             %% TODO the ready should be signed, so we should store the signature in the commitment as well
             case dkg_commitment:add_ready(Commitment, Sender, A) of
                 {true, NewCommitment} ->
+                    case Id of
+                        1 ->
+                            ?LOG_INFO("GOT READY ~p ~p sender ~p echoes ~p readies ~p ?= ~p",
+                                   [(T+1), ceil((N+T+1)/2), Sender,
+                                    dkg_commitment:num_echoes(NewCommitment),
+                                    dkg_commitment:num_readies(NewCommitment), (N-T-F)]);
+                        _ -> meh
+                    end,
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
                          dkg_commitment:num_echoes(NewCommitment) < ceil((N+T+1)/2) of
                         true ->
@@ -254,8 +265,10 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     %% clear the commitments out of our state and return the winning one
+                                    %%case Id == 1 of true -> ct:pal("sending result"); _ -> meh end,
                                     {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}};
                                 false ->
+                                    %%case Id == 1 of true -> ct:pal("waiting some more"); _ -> meh end,
                                     NewVSS = store_commitment(NewCommitment, VSS),
                                     {NewVSS, ok}
                             end

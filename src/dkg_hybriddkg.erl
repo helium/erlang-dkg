@@ -1,6 +1,7 @@
 -module(dkg_hybriddkg).
 
 -export([init/8,
+         input/2, % for testing
          start/1,
          serialize/1,
          deserialize/2,
@@ -112,6 +113,11 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
          leader_cap = leader_cap(1, N),
          shares_map = Shares}.
 
+%% the dgk starts to go on its own, this is here for the sake of
+%% fakecast for now, since all the other protocols take input.
+input(State, _) ->
+    start(State).
+
 start(DKG = #dkg{id=Id, u=G1}) ->
     #{Id := MyShares} = SharesMap = DKG#dkg.shares_map,
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
@@ -143,16 +149,19 @@ handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
                              %% XXX these readies are currently not signed
                              ready_proofs = [{signed_shares_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.ready_proofs]
                             },
-
+            case NewDKG#dkg.id == 1 of true -> ct:pal("shares seen ~p", [length(NewDKG#dkg.shares_seen)]); _ -> meh end,
             case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
                 true ->
                     case NewDKG#dkg.id == Leader of
                         true ->
+                            ct:pal("got result"),
                             {NewDKG, {send, [{multicast, {send, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]}};
                         false ->
+                            ct:pal("got result"),
                             {NewDKG, start_timer}
                     end;
                 false ->
+                    case NewDKG#dkg.id == 1 of true -> ct:pal("not enough"); _ -> meh end,
                     {NewDKG, ok}
             end
     end;
@@ -306,15 +315,16 @@ handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
                 true ->
                     case length(NewDKG#dkg.shares_acked) == 0 of
                         true ->
-                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]};
+                            {NewDKG, {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]}};
                         false ->
-                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_acked, {echo_proofs, NewDKG#dkg.echo_proofs}}}]}
+                            {NewDKG, {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_acked, {echo_proofs, NewDKG#dkg.echo_proofs}}}]}}
                     end;
                 false ->
                     LeaderChangeMsgs = maps:get(ProposedLeader, NewDKG#dkg.leader_vote_counts, []),
                     case length(LeaderChangeMsgs) == N-T-F of
                         true ->
                             NewerProofs = NewerReadyProofs = LeaderChangeMsgs,
+                            ct:pal("new leader is ~p", [ProposedLeader]),
                             NewLeader = ProposedLeader,
                             NewerLeaderCap = leader_cap(Leader, N),
                             NewLeaderChangeMap = maps:put(NewLeader, [], NewDKG#dkg.leader_vote_counts),

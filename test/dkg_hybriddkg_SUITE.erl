@@ -8,7 +8,8 @@
          symmetric_test/1,
          asymmetric_test/1,
          leader_change_symmetric_test/1,
-         leader_change_asymmetric_test/1
+         leader_change_asymmetric_test/1,
+         leader_change_symmetric_fake/1
         ]).
 
 all() ->
@@ -16,7 +17,8 @@ all() ->
      symmetric_test,
      asymmetric_test,
      leader_change_symmetric_test,
-     leader_change_asymmetric_test
+     leader_change_asymmetric_test,
+     leader_change_symmetric_fake
     ].
 
 init_per_testcase(_, Config) ->
@@ -67,6 +69,15 @@ leader_change_asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate('MNT224'),
     run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
 
+leader_change_symmetric_fake(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Module = proplists:get_value(module, Config),
+    {G1, G2} = dkg_test_utils:generate('SS512'),
+    run_fake(N, F, T, Module, 'SS512', G1, G2).
+
+
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
                                                    {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, [])),
@@ -77,6 +88,21 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     ?assertEqual(N-InitialLeader+1, length(sets:to_list(ConvergedResults))),
     ct:pal("Results ~p", [sets:to_list(ConvergedResults)]),
 
+    verify_results(ConvergedResults, N, F, T, G1, G2, Curve).
+
+
+run_fake(N, F, T, _Module, Curve, G1, G2) ->
+
+    TestArgs = [N, F, T, G1, G2, {1, 0}, []],
+
+    {ok, Results} = fakecast:start_test(dkg_fakecast, TestArgs, {1543,599707,659249}, % os:timestamp(),
+                                        [{Node, ignored} || Node <- lists:seq(1, N)]),
+
+    ct:pal("results ~p", [Results]),
+
+    verify_results(Results, N, F, T, G1, G2, Curve).
+
+verify_results(ConvergedResults, N, F, T, G1, G2, Curve) ->
     %% XXX: this is the same as the pubkeyshare test, I'm sure there is more to it
     SecretKeyShares = lists:keysort(1, [ {Node, SecretKey} || {result, {Node, {SecretKey, _VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
     VerificationKeys = lists:keysort(1, [ {Node, VerificationKey} || {result, {Node, {_SecretKey, VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
