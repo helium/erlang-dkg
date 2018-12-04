@@ -48,26 +48,82 @@ asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate(Curve),
     run(Module, N, F, T, Curve, G1, G2).
 
-%% placeholder name
+-record(state,
+        {
+         node_count :: integer(),
+         results = sets:new() :: sets:set()
+        }).
+
 fake_symmetric(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    Module = proplists:get_value(module, Config),
     Curve = 'SS512',
     {G1, G2} = dkg_test_utils:generate(Curve),
-    ok = run_fake(Module, N, F, T, Curve, G1, G2),
-    ok = run_fake(Module, N, F, T, Curve, G1, G2).
+
+    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    Init = fun() ->
+                   {ok,
+                    {
+                     dkg_hybridvss,
+                     random,
+                     favor_concurrent,
+                     [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                     [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                     5000
+                    },
+                    #state{node_count = 10}
+                   }
+           end,
+
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+
+
+    ok = run_fake(Init, fun model/7, os:timestamp(), [{1, Secret}],
+                  N, F, T, Curve, G1, G2, Secret).
+
+%% this model is trivial, we only want to catch outputs and never
+%% change anything about the execution
+model(_Message, _From, To, _NodeState, _NewState, {result, Result},
+      #state{results = Results0} = State) ->
+    Results = sets:add_element({result, {To, Result}}, Results0),
+    %% ct:pal("results len ~p ~p", [sets:size(Results), sets:to_list(Results)]),
+    case sets:size(Results) == State#state.node_count of
+        true ->
+            {result, Results};
+        false ->
+            {continue, State#state{results = Results}}
+    end;
+model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
+    {continue, ModelState}.
+
 
 fake_asymmetric(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    Module = proplists:get_value(module, Config),
     Curve = 'MNT224',
     {G1, G2} = dkg_test_utils:generate(Curve),
-    ok = run_fake(Module, N, F, T, Curve, G1, G2),
-    ok = run_fake(Module, N, F, T, Curve, G1, G2).
+    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    Init = fun() ->
+                   {ok,
+                    {
+                     dkg_hybridvss,
+                     random,
+                     favor_concurrent,
+                     [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                     [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                     5000
+                    },
+                    #state{node_count = 10}
+                   }
+           end,
+
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+
+
+    ok = run_fake(Init, fun model/7, os:timestamp(), [{1, Secret}],
+                  N, F, T, Curve, G1, G2, Secret).
 
 run(Module, N, F, T, Curve, G1, G2) ->
 
@@ -82,13 +138,9 @@ run(Module, N, F, T, Curve, G1, G2) ->
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
     verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2).
 
-run_fake(_Module, N, F, T, Curve, G1, G2) ->
+run_fake(Init, Model, Seed, Input, N, F, T, Curve, G1, G2, Secret) ->
 
-    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
-
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
-
-    {ok, Results} = fakecast:start_test(dkg_vss_fakecast, TestArgs, os:timestamp(), [{1, Secret}]),
+    {ok, Results} = fakecast:start_test(Init, Model, Seed, Input),
 
     ct:pal("results ~p", [Results]),
 

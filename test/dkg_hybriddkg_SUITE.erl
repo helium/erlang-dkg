@@ -69,13 +69,64 @@ leader_change_asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate('MNT224'),
     run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
 
+-record(sk_state,
+        {
+         node_count :: integer(),
+         one_stopped :: boolean(),
+         results = sets:new() :: sets:set()
+        }).
+
 split_key_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    Module = proplists:get_value(module, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
-    run_fake(N, F, T, Module, 'SS512', G1, G2).
+
+    BaseConfig = [N, F, T, G1, G2, {1, 0}, []],
+
+    Init =
+        fun() ->
+                {ok,
+                 {
+                  dkg_hybriddkg,
+                  random,
+                  favor_concurrent,
+                  [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                  [[Id] ++ BaseConfig || Id <- lists:seq(1, 10)], % pull count from config
+                  5000
+                 },
+                 #sk_state{node_count = 9,
+                        one_stopped = false}
+                }
+        end,
+
+    run_fake(Init, fun sk_model/7, {1543,599707,659249}, % known failure case
+             [{Node, ignored} || Node <- lists:seq(1, N)], % input
+             N, F, T, 'SS512', G1, G2).
+
+%% unhappen all messages from vss 4, to manipulate Q on 2
+sk_model({{vss,N},_}, _, 2, NodeState, _NewState, _Actions, ModelState) when N == 4 ->
+    {actions, [{alter_state, NodeState}], ModelState};
+sk_model(_, 1, 2, NodeState, _NewState, _Actions, ModelState) ->
+    {actions, [{alter_state, NodeState}], ModelState};
+sk_model(_Msg, _from, 1, _NodeState, _NewState, {send,[{multicast,Send}]},
+      #sk_state{one_stopped = false} = ModelState) when element(1, Send) == send ->
+    %% fakecast:trace("actions: ~p", [_Ac]),
+    NewActions = [{unicast, N, Send} || N <- [2,3,4,5]],
+    {actions, [{stop_node, 1}, {alter_actions, {send, NewActions}}],
+     ModelState#sk_state{one_stopped = true}};
+sk_model(_Message, _From, To, _NodeState, _NewState, {result, Result},
+      #sk_state{results = Results0} = State) ->
+    Results = sets:add_element({result, {To, Result}}, Results0),
+    ct:pal("results len ~p ~p", [sets:size(Results), sets:to_list(Results)]),
+    case sets:size(Results) == State#sk_state.node_count of
+        true ->
+            {result, Results};
+        false ->
+            {continue, State#sk_state{results = Results}}
+    end;
+sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
+    {continue, ModelState}.
 
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
@@ -91,12 +142,9 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     verify_results(ConvergedResults, N, F, T, G1, G2, Curve).
 
 
-run_fake(N, F, T, _Module, Curve, G1, G2) ->
+run_fake(Init, Model, Seed, Input, N, F, T, Curve, G1, G2) ->
 
-    TestArgs = [N, F, T, G1, G2, {1, 0}, []],
-
-    {ok, Results} = fakecast:start_test(dkg_fakecast, TestArgs, {1543,599707,659249}, % os:timestamp(),
-                                        [{Node, ignored} || Node <- lists:seq(1, N)]),
+    {ok, Results} = fakecast:start_test(Init, Model, Seed, Input),
 
     ct:pal("results ~p", [Results]),
 
