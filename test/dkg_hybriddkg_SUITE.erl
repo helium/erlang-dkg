@@ -104,17 +104,27 @@ split_key_test(Config) ->
              [{Node, ignored} || Node <- lists:seq(1, N)], % input
              N, F, T, 'SS512', G1, G2).
 
+%% this model alters the sequence of events to trigger the split keys
+%% condition (in the original code).  it does so by making sure that
+%% 2 does not have the share for VSS 4, which means that later when it
+%% updates its proposal during the leader change, it will propose Q =
+%% [1..10], which will then fail because it doesn't have all of the shares.
+
 %% unhappen all messages from vss 4, to manipulate Q on 2
 sk_model({{vss,N},_}, _, 2, NodeState, _NewState, _Actions, ModelState) when N == 4 ->
     {actions, [{alter_state, NodeState}], ModelState};
+%% drop all messages between 1 and 2 to make sure that local q isn't polluted
 sk_model(_, 1, 2, NodeState, _NewState, _Actions, ModelState) ->
     {actions, [{alter_state, NodeState}], ModelState};
+%% when node one gets to the send state, allow it to send out some
+%% messages, drop others, and fail it
 sk_model(_Msg, _from, 1, _NodeState, _NewState, {send,[{multicast,Send}]},
       #sk_state{one_stopped = false} = ModelState) when element(1, Send) == send ->
     %% fakecast:trace("actions: ~p", [_Ac]),
     NewActions = [{unicast, N, Send} || N <- [2,3,4,5]],
     {actions, [{stop_node, 1}, {alter_actions, {send, NewActions}}],
      ModelState#sk_state{one_stopped = true}};
+%% collect results
 sk_model(_Message, _From, To, _NodeState, _NewState, {result, Result},
       #sk_state{results = Results0} = State) ->
     Results = sets:add_element({result, {To, Result}}, Results0),
@@ -125,6 +135,7 @@ sk_model(_Message, _From, To, _NodeState, _NewState, {result, Result},
         false ->
             {continue, State#sk_state{results = Results}}
     end;
+%% otherwise continue
 sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
     {continue, ModelState}.
 
