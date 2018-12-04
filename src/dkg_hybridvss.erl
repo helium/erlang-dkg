@@ -265,10 +265,8 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false}, Sender, {ready, {Session,
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     %% clear the commitments out of our state and return the winning one
-                                    %%case Id == 1 of true -> ct:pal("sending result"); _ -> meh end,
                                     {VSS#vss{done=true, commitments=#{}}, {result, {Session, NewCommitment, SubShare}}};
                                 false ->
-                                    %%case Id == 1 of true -> ct:pal("waiting some more"); _ -> meh end,
                                     NewVSS = store_commitment(NewCommitment, VSS),
                                     {NewVSS, ok}
                             end

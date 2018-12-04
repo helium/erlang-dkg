@@ -9,7 +9,7 @@
          asymmetric_test/1,
          leader_change_symmetric_test/1,
          leader_change_asymmetric_test/1,
-         leader_change_symmetric_fake/1
+         split_key_test/1
         ]).
 
 all() ->
@@ -18,7 +18,7 @@ all() ->
      asymmetric_test,
      leader_change_symmetric_test,
      leader_change_asymmetric_test,
-     leader_change_symmetric_fake
+     split_key_test
     ].
 
 init_per_testcase(_, Config) ->
@@ -69,7 +69,7 @@ leader_change_asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate('MNT224'),
     run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
 
-leader_change_symmetric_fake(Config) ->
+split_key_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
@@ -108,7 +108,7 @@ verify_results(ConvergedResults, N, F, T, G1, G2, Curve) ->
     VerificationKeys = lists:keysort(1, [ {Node, VerificationKey} || {result, {Node, {_SecretKey, VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
     VerificationKeyss = lists:keysort(1, [ {Node, VerificationKeyz} || {result, {Node, {_SecretKey, _VerificationKey, VerificationKeyz}}} <- sets:to_list(ConvergedResults)]),
     ct:pal("Secret key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- SecretKeyShares]]),
-    ct:pal("Public key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- VerificationKeys]]),
+    ct:pal("Public key shares ~p", [[ {I, erlang_pbc:element_to_string(S)} || {I, S} <- VerificationKeys]]),
     ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
     PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
     KnownSecret = dkg_polynomial:evaluate(PublicKeySharePoly, 0),

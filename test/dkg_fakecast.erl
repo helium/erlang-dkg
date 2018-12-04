@@ -38,7 +38,7 @@ model(_, 1, 2, NodeState, _NewState, _Actions, ModelState) ->
 model(_Msg, _from, 1, _NodeState, _NewState, {send,[{multicast,Send}]},
       #state{one_stopped = false} = ModelState) when element(1, Send) == send ->
     %% fakecast:trace("actions: ~p", [_Ac]),
-    NewActions = [{unicast, N, Send} || N <- [3,4,5,7]],
+    NewActions = [{unicast, N, Send} || N <- [2,3,4,5]],
     {actions, [{stop_node, 1}, {alter_actions, {send, NewActions}}],
      ModelState#state{one_stopped = true}};
 model(_Message, _From, To, _NodeState, _NewState, {result, Result},
