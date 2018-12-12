@@ -2,6 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("relcast/include/fakecast.hrl").
 
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
@@ -87,20 +88,19 @@ split_key_test(Config) ->
     Init =
         fun() ->
                 {ok,
-                 {
-                  dkg_hybriddkg,
-                  random,
-                  favor_concurrent,
-                  [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
-                  [[Id] ++ BaseConfig || Id <- lists:seq(1, 10)], % pull count from config
-                  5000
+                 #fc_conf{
+                    test_mod = dkg_hybriddkg,
+                    nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                    configs = [[Id] ++ BaseConfig || Id <- lists:seq(1, N)], % pull count from config
+                    id_start = 1,
+                    max_time = 3000
                  },
-                 #sk_state{node_count = 9,
-                        one_stopped = false}
+                 #sk_state{node_count = N - 1,
+                           one_stopped = false}
                 }
         end,
 
-    run_fake(Init, fun sk_model/7, {1543,599707,659249}, % known failure case
+    run_fake(Init, fun sk_model/7, os:timestamp(), %% {1543,599707,659249}, % known failure case
              [{Node, ignored} || Node <- lists:seq(1, N)], % input
              N, F, T, 'SS512', G1, G2).
 
@@ -133,11 +133,11 @@ sk_model(_Message, _From, To, _NodeState, _NewState, {result, Result},
         true ->
             {result, Results};
         false ->
-            {continue, State#sk_state{results = Results}}
+            {actions, [], State#sk_state{results = Results}}
     end;
 %% otherwise continue
 sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
-    {continue, ModelState}.
+    {actions, [], ModelState}.
 
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->

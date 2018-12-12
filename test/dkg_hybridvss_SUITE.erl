@@ -2,6 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("relcast/include/fakecast.hrl").
 
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
@@ -64,14 +65,12 @@ fake_symmetric(Config) ->
     TestArgs = [N, F, T, G1, G2, {1, 0}, false],
     Init = fun() ->
                    {ok,
-                    {
-                     dkg_hybridvss,
-                     random,
-                     favor_concurrent,
-                     [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
-                     [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
-                     5000
-                    },
+                    #fc_conf{
+                       test_mod = dkg_hybridvss,
+                       nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                       configs = [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                       id_start = 1
+                      },
                     #state{node_count = 10}
                    }
            end,
@@ -92,10 +91,10 @@ model(_Message, _From, To, _NodeState, _NewState, {result, Result},
         true ->
             {result, Results};
         false ->
-            {continue, State#state{results = Results}}
+            {actions, [], State#state{results = Results}}
     end;
 model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
-    {continue, ModelState}.
+    {actions, [], ModelState}.
 
 
 fake_asymmetric(Config) ->
@@ -107,14 +106,12 @@ fake_asymmetric(Config) ->
     TestArgs = [N, F, T, G1, G2, {1, 0}, false],
     Init = fun() ->
                    {ok,
-                    {
-                     dkg_hybridvss,
-                     random,
-                     favor_concurrent,
-                     [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
-                     [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
-                     5000
-                    },
+                    #fc_conf{
+                       test_mod = dkg_hybridvss,
+                       nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                       configs = [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                       id_start = 1
+                      },
                     #state{node_count = 10}
                    }
            end,
