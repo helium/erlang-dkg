@@ -2,13 +2,15 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("relcast/include/fakecast.hrl").
 
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
          symmetric_test/1,
          asymmetric_test/1,
          leader_change_symmetric_test/1,
-         leader_change_asymmetric_test/1
+         leader_change_asymmetric_test/1,
+         split_key_test/1
         ]).
 
 all() ->
@@ -16,7 +18,8 @@ all() ->
      symmetric_test,
      asymmetric_test,
      leader_change_symmetric_test,
-     leader_change_asymmetric_test
+     leader_change_asymmetric_test,
+     split_key_test
     ].
 
 init_per_testcase(_, Config) ->
@@ -67,6 +70,76 @@ leader_change_asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate('MNT224'),
     run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
 
+-record(sk_state,
+        {
+         node_count :: integer(),
+         one_stopped :: boolean(),
+         results = sets:new() :: sets:set()
+        }).
+
+split_key_test(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    {G1, G2} = dkg_test_utils:generate('SS512'),
+
+    BaseConfig = [N, F, T, G1, G2, {1, 0}, []],
+
+    Init =
+        fun() ->
+                {ok,
+                 #fc_conf{
+                    test_mod = dkg_hybriddkg,
+                    nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                    configs = [[Id] ++ BaseConfig || Id <- lists:seq(1, N)], % pull count from config
+                    id_start = 1,
+                    max_time = 3000
+                 },
+                 #sk_state{node_count = N - 1,
+                           one_stopped = false}
+                }
+        end,
+
+    run_fake(Init, fun sk_model/7, os:timestamp(), %% {1543,599707,659249}, % known failure case
+             [{Node, ignored} || Node <- lists:seq(1, N)], % input
+             N, F, T, 'SS512', G1, G2).
+
+%% this model alters the sequence of events to trigger the split keys
+%% condition (in the original code).  it does so by making sure that
+%% 2 does not have the share for VSS 4, which means that later when it
+%% updates its proposal during the leader change, it will propose Q =
+%% [1..10], which will then fail because it doesn't have all of the shares.
+
+%% unhappen all messages from vss 4, to manipulate Q on 2
+sk_model({{vss,N},_}, _, 2, NodeState, _NewState, _Actions, ModelState) when N == 4 ->
+    {actions, [{alter_state, NodeState}], ModelState};
+%% drop all messages between 1 and 2 to make sure that local q isn't polluted
+sk_model(_, 1, 2, NodeState, _NewState, _Actions, ModelState) ->
+    {actions, [{alter_state, NodeState}], ModelState};
+%% when node one gets to the send state, allow it to send out some
+%% messages, drop others, and fail it
+sk_model(_Msg, _from, 1, _NodeState, _NewState, {send,[{multicast,Send}]},
+      #sk_state{one_stopped = false} = ModelState) when element(1, Send) == send ->
+    %% fakecast:trace("actions: ~p", [_Ac]),
+    NewActions = [{unicast, N, Send} || N <- [2,3,4,5]],
+    {actions, [{stop_node, 1}, {alter_actions, {send, NewActions}}],
+     ModelState#sk_state{one_stopped = true}};
+%% collect results
+sk_model(_Message, _From, To, _NodeState, _NewState, {result, Result},
+      #sk_state{results = Results0} = State) ->
+    Results = sets:add_element({result, {To, Result}}, Results0),
+    ct:pal("results len ~p ~p", [sets:size(Results), sets:to_list(Results)]),
+    case sets:size(Results) == State#sk_state.node_count of
+        true ->
+            {result, Results};
+        false ->
+            {actions, [], State#sk_state{results = Results}}
+    end;
+%% otherwise continue
+sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
+    {actions, [], ModelState}.
+
+
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
                                                    {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, [])),
@@ -77,12 +150,24 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
     ?assertEqual(N-InitialLeader+1, length(sets:to_list(ConvergedResults))),
     ct:pal("Results ~p", [sets:to_list(ConvergedResults)]),
 
+    verify_results(ConvergedResults, N, F, T, G1, G2, Curve).
+
+
+run_fake(Init, Model, Seed, Input, N, F, T, Curve, G1, G2) ->
+
+    {ok, Results} = fakecast:start_test(Init, Model, Seed, Input),
+
+    ct:pal("results ~p", [Results]),
+
+    verify_results(Results, N, F, T, G1, G2, Curve).
+
+verify_results(ConvergedResults, N, F, T, G1, G2, Curve) ->
     %% XXX: this is the same as the pubkeyshare test, I'm sure there is more to it
     SecretKeyShares = lists:keysort(1, [ {Node, SecretKey} || {result, {Node, {SecretKey, _VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
     VerificationKeys = lists:keysort(1, [ {Node, VerificationKey} || {result, {Node, {_SecretKey, VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
     VerificationKeyss = lists:keysort(1, [ {Node, VerificationKeyz} || {result, {Node, {_SecretKey, _VerificationKey, VerificationKeyz}}} <- sets:to_list(ConvergedResults)]),
     ct:pal("Secret key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- SecretKeyShares]]),
-    ct:pal("Public key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- VerificationKeys]]),
+    ct:pal("Public key shares ~p", [[ {I, erlang_pbc:element_to_string(S)} || {I, S} <- VerificationKeys]]),
     ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
     PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
     KnownSecret = dkg_polynomial:evaluate(PublicKeySharePoly, 0),

@@ -2,17 +2,22 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("relcast/include/fakecast.hrl").
 
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
          symmetric_test/1,
-         asymmetric_test/1
+         asymmetric_test/1,
+         fake_symmetric/1,
+         fake_asymmetric/1
         ]).
 
 all() ->
     [
      symmetric_test,
-     asymmetric_test
+     asymmetric_test,
+     fake_symmetric,
+     fake_asymmetric
     ].
 
 init_per_testcase(_, Config) ->
@@ -44,6 +49,79 @@ asymmetric_test(Config) ->
     {G1, G2} = dkg_test_utils:generate(Curve),
     run(Module, N, F, T, Curve, G1, G2).
 
+-record(state,
+        {
+         node_count :: integer(),
+         results = sets:new() :: sets:set()
+        }).
+
+fake_symmetric(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Curve = 'SS512',
+    {G1, G2} = dkg_test_utils:generate(Curve),
+
+    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    Init = fun() ->
+                   {ok,
+                    #fc_conf{
+                       test_mod = dkg_hybridvss,
+                       nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                       configs = [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                       id_start = 1
+                      },
+                    #state{node_count = 10}
+                   }
+           end,
+
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+
+
+    ok = run_fake(Init, fun model/7, os:timestamp(), [{1, Secret}],
+                  N, F, T, Curve, G1, G2, Secret).
+
+%% this model is trivial, we only want to catch outputs and never
+%% change anything about the execution
+model(_Message, _From, To, _NodeState, _NewState, {result, Result},
+      #state{results = Results0} = State) ->
+    Results = sets:add_element({result, {To, Result}}, Results0),
+    %% ct:pal("results len ~p ~p", [sets:size(Results), sets:to_list(Results)]),
+    case sets:size(Results) == State#state.node_count of
+        true ->
+            {result, Results};
+        false ->
+            {actions, [], State#state{results = Results}}
+    end;
+model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
+    {actions, [], ModelState}.
+
+
+fake_asymmetric(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Curve = 'MNT224',
+    {G1, G2} = dkg_test_utils:generate(Curve),
+    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    Init = fun() ->
+                   {ok,
+                    #fc_conf{
+                       test_mod = dkg_hybridvss,
+                       nodes = [aaa, bbb, ccc, ddd, eee, fff, ggg, hhh, iii, jjj],  %% are names useful?
+                       configs = [[Id] ++ TestArgs || Id <- lists:seq(1, N)],
+                       id_start = 1
+                      },
+                    #state{node_count = 10}
+                   }
+           end,
+
+    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+
+
+    ok = run_fake(Init, fun model/7, os:timestamp(), [{1, Secret}],
+                  N, F, T, Curve, G1, G2, Secret).
+
 run(Module, N, F, T, Curve, G1, G2) ->
 
     [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, false) || Id <- lists:seq(1, N) ],
@@ -55,6 +133,17 @@ run(Module, N, F, T, Curve, G1, G2) ->
     States = [NewDealerState | Rest],
     StatesWithId = lists:zip(lists:seq(1, length(States)), States),
     {_FinalStates, ConvergedResults} = dkg_test_utils:do_send_outer(Module, [{1, {send, MsgsToSend}}], StatesWithId, sets:new()),
+    verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2).
+
+run_fake(Init, Model, Seed, Input, N, F, T, Curve, G1, G2, Secret) ->
+
+    {ok, Results} = fakecast:start_test(Init, Model, Seed, Input),
+
+    ct:pal("results ~p", [Results]),
+
+    verify_results(Secret, Results, N, F, T, Curve, G1, G2).
+
+verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2) ->
 
     %% check that the shares from nodes can be interpolated to calculate the original secret back
     NodesAndShares = lists:foldl(fun({result, {Node, {_Session, _Commitment, Share}}}, Acc) ->

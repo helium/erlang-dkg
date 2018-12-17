@@ -1,6 +1,7 @@
 -module(dkg_hybriddkg).
 
 -export([init/8,
+         input/2, % for testing
          start/1,
          serialize/1,
          deserialize/2,
@@ -27,7 +28,8 @@
           leader :: pos_integer(),
           leader_cap :: pos_integer(),
           leader_changing = false :: boolean(),
-          leader_vote_counts = #{} :: leader_vote_counts()
+          leader_vote_counts = #{} :: leader_vote_counts(),
+          await_vss = false :: boolean()
          }).
 
 -record(serialized_dkg, {
@@ -48,7 +50,8 @@
           leader_changing = false :: boolean(),
           leader :: pos_integer(),
           leader_cap :: pos_integer(),
-          leader_vote_counts = #{} :: leader_vote_counts()
+          leader_vote_counts = #{} :: leader_vote_counts(),
+          await_vss = false :: boolean()
          }).
 
 -type ready_proofs() :: [shares_ready()].
@@ -112,6 +115,11 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
          leader_cap = leader_cap(1, N),
          shares_map = Shares}.
 
+%% the dgk starts to go on its own, this is here for the sake of
+%% fakecast for now, since all the other protocols take input.
+input(State, _) ->
+    start(State).
+
 start(DKG = #dkg{id=Id, u=G1}) ->
     #{Id := MyShares} = SharesMap = DKG#dkg.shares_map,
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
@@ -119,6 +127,30 @@ start(DKG = #dkg{id=Id, u=G1}) ->
     {DKG#dkg{shares_map = SharesMap#{Id => NewShares}},
      {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
+handle_msg(DKG=#dkg{await_vss = true}, Sender, {{vss, SharesId}, SharesMsg}) ->
+    case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
+        {_Shares, ignore} ->
+            {DKG, ignore};
+        {NewShares, ok} ->
+            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
+        {NewShares, {send, ToSend}} ->
+            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)},
+             {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
+        {NewShares, {result, {_Session, Commitment, Si}}} ->
+            NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
+                             shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                             shares_seen = [SharesId | DKG#dkg.shares_seen],
+                             %% XXX these readies are currently not signed
+                             ready_proofs = [{signed_shares_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.ready_proofs]
+                            },
+            case output_ready(NewDKG, NewDKG#dkg.shares_acked) of
+                true ->
+                    {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, NewDKG#dkg.shares_acked),
+                    {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                false ->
+                    {NewDKG, ok}
+            end
+    end;
 handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
     case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
         {_Shares, ignore} ->
@@ -143,7 +175,6 @@ handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
                              %% XXX these readies are currently not signed
                              ready_proofs = [{signed_shares_ready, dkg_commitment:readies(Commitment)} | DKG#dkg.ready_proofs]
                             },
-
             case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
                 true ->
                     case NewDKG#dkg.id == Leader of
@@ -203,27 +234,31 @@ handle_msg(DKG = #dkg{id=_Id, n=N, t=T}, Sender, {signed_echo, Shares}=EchoMsg) 
 %%          WAIT for shared output-messages for each Pd ∈ Q
 %%          si ← SUM(si,d) ∀Pd ∈ Q; ∀p,q : C ← MUL(Cd)p,q ∀Pd ∈ Q
 %%          output (L, τ, DKG-completed, C, si)
-handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Q}=ReadyMsg) ->
+handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Shares}=ReadyMsg) ->
     case update_ready_counts(DKG, Sender, ReadyMsg) of
         false ->
             {DKG, ok};
         {true, NewDKG} ->
-            case count_ready(NewDKG, Q) == T+1 andalso count_echo(NewDKG, Q) < ceil((N+T+1)/2) of
+            case count_ready(NewDKG, Shares) == T+1 andalso
+                count_echo(NewDKG, Shares) < ceil((N+T+1)/2) of
                 true ->
                     %% NOTE: shares_acked and echo_proofs are new assignments here
-                    NewSharesAcked = Q,
-                    NewProofs = get_ready(NewDKG, Q),
-                    {NewDKG#dkg{shares_acked=NewSharesAcked, echo_proofs=NewProofs}, {send, [{multicast, {signed_ready, Q}}]}};
+                    NewSharesAcked = Shares,
+                    NewProofs = get_ready(NewDKG, Shares),
+                    {NewDKG#dkg{shares_acked=NewSharesAcked, echo_proofs=NewProofs},
+                     {send, [{multicast, {signed_ready, Shares}}]}};
                 false ->
-                    case count_ready(NewDKG, Q) == N-T-F of
+                    case count_ready(NewDKG, Shares) == N-T-F of
                         true ->
                             %% TODO stop timer
+                            case output_ready(NewDKG, Shares) of
+                                true ->
+                                    {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, Shares),
+                                    {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                                false ->
+                                    {NewDKG#dkg{await_vss = true}, ok}
+                            end;
                             %% TODO presumably we need to check this when we get a VSS result as well?
-                            OutputCommitment = output_commitment(NewDKG),
-                            PublicKeyShares = public_key_shares(NewDKG, OutputCommitment),
-                            VerificationKey = verification_key(OutputCommitment),
-                            Shard = shard(NewDKG),
-                            {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
                         false ->
                             {NewDKG, ok}
                     end
@@ -285,8 +320,7 @@ handle_msg(DKG, _Sender, timeout) ->
 %%          else
 %%              delay ← delay(T )
 %%              start timer(delay)
-handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
-                      ready_proofs=ReadyProofs0, leader_cap=LeaderCap},
+handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, leader_cap=LeaderCap},
            Sender,
            {signed_leader_change, ProposedLeader, Shares, Proofs}=LeaderChangeMsg) when ProposedLeader > Leader ->
     %% TODO: verify the signature(Q, R/M)
@@ -295,9 +329,8 @@ handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
             NewLeaderCap = min(LeaderCap, ProposedLeader),
             NewDKG = case Proofs of
                          {ready_proofs, ReadyProofs} ->
-                             %% FIXME: do this better
-                             NewSharesSeen = lists:usort(SharesSeen0 ++ Shares),
-                             NewReadyProofs = lists:usort(ReadyProofs0 ++ ReadyProofs),
+                             NewSharesSeen = Shares,
+                             NewReadyProofs = ReadyProofs,
                              NewDKG0#dkg{shares_seen = NewSharesSeen, ready_proofs = NewReadyProofs};
                          {echo_proofs, EchoProofs} ->
                              NewDKG0#dkg{shares_acked = Shares, echo_proofs = EchoProofs}
@@ -306,9 +339,9 @@ handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
                 true ->
                     case length(NewDKG#dkg.shares_acked) == 0 of
                         true ->
-                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]};
+                            {NewDKG, {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_seen, {ready_proofs, NewDKG#dkg.ready_proofs}}}]}};
                         false ->
-                            {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_acked, {echo_proofs, NewDKG#dkg.echo_proofs}}}]}
+                            {NewDKG, {send, [{multicast, {signed_leader_change, NewLeaderCap, NewDKG#dkg.shares_acked, {echo_proofs, NewDKG#dkg.echo_proofs}}}]}}
                     end;
                 false ->
                     LeaderChangeMsgs = maps:get(ProposedLeader, NewDKG#dkg.leader_vote_counts, []),
@@ -328,7 +361,10 @@ handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, shares_seen=SharesSeen0,
                                 true ->
                                     case length(NewerDKG#dkg.shares_acked) == 0 of
                                         true ->
-                                            {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.shares_seen, {ready_proofs, NewerDKG#dkg.ready_proofs}}}]}};
+                                            %% choose a subset of T+1 shares we actually have here
+                                            SharesProposal0 = maps:keys(NewerDKG#dkg.shares_results),
+                                            {SharesProposal, _} = lists:split(T+1, SharesProposal0),
+                                            {NewerDKG, {send, [{multicast, {send, SharesProposal, {ready_proofs, NewerDKG#dkg.ready_proofs}}}]}};
                                         false ->
                                             {NewerDKG, {send, [{multicast, {send, NewerDKG#dkg.shares_acked, {echo_proofs, NewerDKG#dkg.echo_proofs}}}]}}
                                     end;
@@ -348,8 +384,21 @@ handle_msg(DKG, _Sender, _Msg) ->
     {DKG, ignore}.
 
 %% helper functions
--spec output_commitment(#dkg{}) -> dkg_commitment:commitment().
-output_commitment(_DKG=#dkg{shares_results=R, u2=U2, t=T, n=N}) ->
+
+output_ready(#dkg{shares_results = R0}, Shares) ->
+    R = maps:with(Shares, R0),
+    maps:size(R) == length(Shares).
+
+output(DKG, Shares) ->
+    OutputCommitment = output_commitment(DKG, Shares),
+    PublicKeyShares = public_key_shares(DKG, OutputCommitment),
+    VerificationKey = verification_key(OutputCommitment),
+    Shard = shard(DKG, Shares),
+    {Shard, VerificationKey, PublicKeyShares}.
+
+-spec output_commitment(#dkg{}, node_set()) -> dkg_commitment:commitment().
+output_commitment(_DKG=#dkg{shares_results=R0, u2=U2, t=T, n=N}, Shares) ->
+    R = maps:with(Shares, R0),
     maps:fold(fun(_K, {Commitment, _}, Acc) ->
                       dkg_commitment:mul(Commitment, Acc)
               end, dkg_commitment:new(lists:seq(1, N), U2, T), R).
@@ -362,8 +411,9 @@ public_key_shares(_DKG=#dkg{n=N}, OutputCommitment) ->
 verification_key(OutputCommitment) ->
     dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
 
--spec shard(#dkg{}) -> erlang_pbc:element().
-shard(_DKG=#dkg{shares_results=R, u=U}) ->
+-spec shard(#dkg{}, node_set()) -> erlang_pbc:element().
+shard(_DKG=#dkg{shares_results=R0, u=U}, Shares) ->
+    R = maps:with(Shares, R0),
     Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
     maps:fold(fun(_K, {_, Si}, Acc) ->
                         erlang_pbc:element_add(Acc, Si)
@@ -458,7 +508,8 @@ serialize(#dkg{id=Id,
                leader_changing=LeaderChanging,
                leader=Leader,
                leader_cap=LeaderCap,
-               leader_vote_counts=LeaderVoteCounts}) ->
+               leader_vote_counts=LeaderVoteCounts,
+               await_vss=AwaitVSS}) ->
     #serialized_dkg{id=Id,
                     n=N,
                     f=F,
@@ -476,7 +527,8 @@ serialize(#dkg{id=Id,
                     leader_changing=LeaderChanging,
                     leader=Leader,
                     leader_cap=LeaderCap,
-                    leader_vote_counts=LeaderVoteCounts}.
+                    leader_vote_counts=LeaderVoteCounts,
+                    await_vss=AwaitVSS}.
 
 -spec deserialize(serialized_dkg(), erlang_pbc:element()) -> dkg().
 deserialize(#serialized_dkg{id=Id,
@@ -498,7 +550,8 @@ deserialize(#serialized_dkg{id=Id,
                             leader_cap=LeaderCap,
                             %% XXX: Only one element is enough?
                             %% presumably we need to generate U and U2 again to deserialize? Not sure...
-                            leader_vote_counts=LeaderVoteCounts}, Element) ->
+                            leader_vote_counts=LeaderVoteCounts,
+                            await_vss=AwaitVSS}, Element) ->
     #dkg{id=Id,
          n=N,
          f=F,
@@ -516,7 +569,8 @@ deserialize(#serialized_dkg{id=Id,
          leader_changing=LeaderChanging,
          leader=Leader,
          leader_cap=LeaderCap,
-         leader_vote_counts=LeaderVoteCounts}.
+         leader_vote_counts=LeaderVoteCounts,
+         await_vss=AwaitVSS}.
 
 -spec serialize_shares_map(shares_map()) -> serialized_shares_map().
 serialize_shares_map(SharesMap) ->
