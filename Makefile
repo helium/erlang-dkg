@@ -17,3 +17,5 @@ test: compile
 typecheck:
 	$(REBAR) dialyzer
 
+ci:
+	$(REBAR) dialyzer && $(REBAR) as test do ct -c --verbose, cover -v
