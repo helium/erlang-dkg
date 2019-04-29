@@ -12,10 +12,12 @@ cover:
 	$(REBAR) cover
 
 test: compile
-	$(REBAR) as test do ct --verbose
+	$(REBAR) as test do ct
 
 typecheck:
 	$(REBAR) dialyzer
 
 ci:
-	$(REBAR) dialyzer && $(REBAR) as test do ct -c --verbose, cover -v
+	$(REBAR) dialyzer && $(REBAR) as test do ct,cover
+	$(REBAR) covertool generate
+	codecov -f _build/test/covertool/dkg.covertool.xml
