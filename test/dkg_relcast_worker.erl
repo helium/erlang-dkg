@@ -96,7 +96,7 @@ do_send([], State) ->
     State;
 do_send([{I, undefined} | Tail], State) ->
     case relcast:take(I, State#state.relcast) of
-        {not_found, _, NewRelcast} ->
+        {not_found, NewRelcast} ->
             do_send(Tail, State#state{relcast=NewRelcast});
         {ok, Ref, _, Msg, NewRelcast} ->
             gen_server:cast({global, name(I)}, {dkg, State#state.id, Msg}),
