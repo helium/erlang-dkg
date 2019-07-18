@@ -29,7 +29,8 @@
           leader_cap :: pos_integer(),
           leader_changing = false :: boolean(),
           leader_vote_counts = #{} :: leader_vote_counts(),
-          await_vss = false :: boolean()
+          await_vss = false :: boolean(),
+          elections_allowed = false :: boolean()
          }).
 
 -record(serialized_dkg, {
@@ -51,7 +52,8 @@
           leader :: pos_integer(),
           leader_cap :: pos_integer(),
           leader_vote_counts = #{} :: leader_vote_counts(),
-          await_vss = false :: boolean()
+          await_vss = false :: boolean(),
+          elections_allowed = false :: boolean()
          }).
 
 -type ready_proofs() :: [shares_ready()].
@@ -100,6 +102,9 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
     erlang_pbc:element_pp_init(G1),
     erlang_pbc:element_pp_init(G2),
     Callback = proplists:get_value(callback, Options, false),
+    %% Don't allow elections by default. We don't have signed proofs they should
+    %% occur so it's not safe to enable this in a non development context.
+    Elections = proplists:get_value(elections, Options, false),
     Shares = lists:foldl(fun(E, Map) ->
                                  Share = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback),
                                  Map#{E => Share}
@@ -113,7 +118,9 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
          u2 = G2,
          leader = 1,
          leader_cap = leader_cap(1, N),
-         shares_map = Shares}.
+         shares_map = Shares,
+         elections_allowed = Elections
+        }.
 
 %% the dgk starts to go on its own, this is here for the sake of
 %% fakecast for now, since all the other protocols take input.
@@ -280,7 +287,8 @@ handle_msg(DKG=#dkg{leader_changing = false,
                     shares_seen = SharesSeen,
                     ready_proofs = ReadyProofs,
                     echo_proofs = EchoProofs,
-                    leader = CurrentLeader}, _Sender, timeout) ->
+                    leader = CurrentLeader,
+                    elections_allowed = true}, _Sender, timeout) ->
     NewDKG = DKG#dkg{leader_changing=true},
 
     Msg = case length(SharesAcked) == 0 of
@@ -320,7 +328,7 @@ handle_msg(DKG, _Sender, timeout) ->
 %%          else
 %%              delay ← delay(T )
 %%              start timer(delay)
-handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, leader_cap=LeaderCap},
+handle_msg(DKG = #dkg{leader = Leader, t=T, n=N, f=F, leader_cap=LeaderCap, elections_allowed=true},
            Sender,
            {signed_leader_change, ProposedLeader, Shares, Proofs}=LeaderChangeMsg) when ProposedLeader > Leader ->
     %% TODO: verify the signature(Q, R/M)

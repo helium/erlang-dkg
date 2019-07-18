@@ -59,7 +59,7 @@ leader_change_symmetric_test(Config) ->
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader).
+    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}]).
 
 leader_change_asymmetric_test(Config) ->
     N = proplists:get_value(n, Config),
@@ -68,7 +68,7 @@ leader_change_asymmetric_test(Config) ->
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
     {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
+    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader, [{elections, true}]).
 
 -record(sk_state,
         {
@@ -83,7 +83,7 @@ split_key_test(Config) ->
     T = proplists:get_value(t, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
 
-    BaseConfig = [N, F, T, G1, G2, {1, 0}, []],
+    BaseConfig = [N, F, T, G1, G2, {1, 0}, [{elections, true}]],
 
     Init =
         fun() ->
@@ -141,8 +141,11 @@ sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
 
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
+    run(N, F, T, Module, Curve, G1, G2, InitialLeader, []).
+
+run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, [])),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, Options)),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
 
