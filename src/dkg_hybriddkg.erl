@@ -58,7 +58,7 @@
 
 -type node_set() :: [pos_integer()].
 -type echo_proofs() :: [signed_ready() | signed_echo()].
--type signed_leader_change() :: {signed_leader_change, pos_integer(), node_set(), vss_ready_proofs() | echo_proofs()}.
+-type signed_leader_change() :: {signed_leader_change, pos_integer(), vss_ready_proofs()} | {signed_leader_change, pos_integer(), node_set(), echo_proofs()}.
 -type signed_echo() :: {signed_echo, node_set()}.
 -type signed_ready() :: {signed_ready, node_set()}.
 -type vss_ready_proofs() :: [{VSSId :: pos_integer(), dkg_commitment:ready_proofs()}].
@@ -109,8 +109,8 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
     %% occur so it's not safe to enable this in a non development context.
     Elections = proplists:get_value(elections, Options, false),
     %% these will cause an exception if not present in the options list
-    {signfun, SignFun} = lists:keyfind(signfun, 1, Options ++ [{signfun, fun(_) -> <<"lol">> end}]),
-    {verifyfun, VerifyFun} = lists:keyfind(verifyfun, 1, Options ++ [{verifyfun, fun(_, _, _) -> true end}]),
+    {signfun, SignFun} = lists:keyfind(signfun, 1, Options),
+    {verifyfun, VerifyFun} = lists:keyfind(verifyfun, 1, Options),
     Shares = lists:foldl(fun(E, Map) ->
                                  Share = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback, SignFun, VerifyFun),
                                  Map#{E => Share}

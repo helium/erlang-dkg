@@ -40,7 +40,7 @@ init(DKGArgs) ->
                    false ->
                        {G1, G2}
                end,
-    DKG = dkg_hybriddkg:init(ID, N, F, T, G1_Prime, G2_Prime, Round, [{callback, true}]),
+    DKG = dkg_hybriddkg:init(ID, N, F, T, G1_Prime, G2_Prime, Round, [{callback, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]),
     {ok, #state{round=Round, id=ID, n=N, t=T, dkg=DKG, curve=Curve, g1=G1_Prime, g2=G2_Prime}}.
 
 handle_command(start_round, State) ->
