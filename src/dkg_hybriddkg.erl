@@ -511,10 +511,12 @@ store_leader_change(DKG, Sender, {signed_leader_change, ProposedLeader, _Proof}=
             false
     end.
 
-verify_proofs({vss_ready_proofs, Proofs}, DKG) ->
+verify_proofs({vss_ready_proofs, Proofs}, DKG = #dkg{n=N, t=T, f=F}) ->
     Res = lists:all(fun({VSSId, Proof}) ->
                             %% get the VSS state for this ID
                             VSS = maps:get(VSSId, DKG#dkg.shares_map),
+                            %% check we have enough proofs
+                            maps:size(Proof) == (N - T - F) andalso
                             %% check that every ready proof is valid for this VSS
                             lists:all(fun({Sender, ReadyProof}) ->
                                                         dkg_hybridvss:verify_proof(VSS, Sender, ReadyProof)

@@ -196,28 +196,30 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false, callback=CB}, Sender, {rea
         true ->
             %% The point is valid and we have a ready proof
             case dkg_commitment:add_ready(Commitment, Sender, A) of
-                {true, NewCommitment} ->
+                {true, NewCommitment0} ->
+                    {true, NewCommitment} = dkg_commitment:add_ready_proof(NewCommitment0, Sender, ReadyProof),
                     case dkg_commitment:num_readies(NewCommitment) == (T+1) andalso
                          dkg_commitment:num_echoes(NewCommitment) < ceil((N+T+1)/2) of
                         true when CB == true ->
                             SubShares = dkg_commitment:interpolate(NewCommitment, ready, dkg_util:allnodes(N)),
-                            ReadyProof = construct_proof(VSS),
+                            MyReadyProof = construct_proof(VSS),
                             Msgs = lists:map(fun(Node) ->
                                                      erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares))
                                              end, dkg_util:allnodes(N)),
                             NewVSS = store_commitment(NewCommitment, VSS),
-                            {NewVSS, {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs, ReadyProof}}}]}};
+                            {NewVSS, {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs, MyReadyProof}}}]}};
                         true ->
                             %% not in callback mode
                             SubShares = dkg_commitment:interpolate(NewCommitment, ready, dkg_util:allnodes(N)),
-                            ReadyProof = construct_proof(VSS),
+                            MyReadyProof = construct_proof(VSS),
                             Msgs = lists:map(fun(Node) ->
-                                                     {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares)), ReadyProof}}}
+                                                     {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares)), MyReadyProof}}}
                                              end, dkg_util:allnodes(N)),
                             NewVSS = store_commitment(NewCommitment, VSS),
                             {NewVSS, {send, Msgs}};
                         false ->
-                            case dkg_commitment:num_readies(NewCommitment) == (N-T-F) of
+                            case dkg_commitment:num_readies(NewCommitment) == (N-T-F) andalso
+                                 maps:size(dkg_commitment:ready_proofs(NewCommitment)) == (N-T-F) of
                                 true->
                                     [SubShare] = dkg_commitment:interpolate(NewCommitment, ready, []),
                                     %% clear the commitments out of our state and return the winning one
