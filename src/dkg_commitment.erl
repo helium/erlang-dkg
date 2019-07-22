@@ -9,10 +9,11 @@
          interpolate/3,
          add_echo/3,
          add_ready/3,
+         add_ready_proof/3,
          num_echoes/1,
          num_readies/1,
          echoes/1,
-         readies/1,
+         ready_proofs/1,
          matrix/1,
          set_matrix/2,
          binary_matrix/1,
@@ -26,7 +27,8 @@
           generator :: erlang_pbc:element(),
           nodes = [] :: [pos_integer()],
           echoes = #{} :: echoes(),
-          readies =#{} :: readies()
+          readies =#{} :: readies(),
+          proofs =#{} :: ready_proofs()
          }).
 
 -record(serialized_commitment, {
@@ -34,15 +36,17 @@
           generator :: binary(),
           nodes = [] :: [pos_integer()],
           echoes = #{} :: #{pos_integer() => binary()},
-          readies = #{} :: #{pos_integer() => binary()}
+          readies = #{} :: #{pos_integer() => binary()},
+          proofs =#{} :: ready_proofs()
          }).
 
 -type commitment() :: #commitment{}.
 -type echoes() :: #{pos_integer() => erlang_pbc:element()}.
 -type readies() :: #{pos_integer() => erlang_pbc:element()}.
 -type serialized_commitment() :: #serialized_commitment{}.
+-type ready_proofs() :: #{pos_integer() => binary()}.
 
--export_type([commitment/0, readies/0, serialized_commitment/0]).
+-export_type([commitment/0, ready_proofs/0, serialized_commitment/0]).
 
 -spec new([pos_integer(),...], erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> commitment().
 new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
@@ -99,20 +103,47 @@ interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
 
 -spec add_echo(commitment(), pos_integer(), erlang_pbc:element()) -> {true | false, commitment()}.
 add_echo(Commitment = #commitment{nodes=Nodes, echoes=Echoes}, NodeID, Echo) when NodeID /= 0 ->
-    case lists:member(NodeID, Nodes) andalso maps:is_key(NodeID, Echoes) of
+    case lists:member(NodeID, Nodes) of
         true ->
-            {false, Commitment};
+            case maps:is_key(NodeID, Echoes) of
+                true ->
+                    {false, Commitment};
+                false ->
+                    {true, Commitment#commitment{echoes = maps:put(NodeID, Echo, Echoes)}}
+            end;
         false ->
-            {true, Commitment#commitment{echoes = maps:put(NodeID, Echo, Echoes)}}
+            %% unknown node ID
+            {false, Commitment}
     end.
 
 -spec add_ready(commitment(), pos_integer(), erlang_pbc:element()) -> {true | false, commitment()}.
 add_ready(Commitment = #commitment{nodes=Nodes, readies=Readies}, NodeID, Ready) when NodeID /= 0 ->
-    case lists:member(NodeID, Nodes) andalso maps:is_key(NodeID, Readies) of
+    case lists:member(NodeID, Nodes) of
         true ->
-            {false, Commitment};
+            case maps:is_key(NodeID, Readies) of
+                true ->
+                    {false, Commitment};
+                false ->
+                    {true, Commitment#commitment{readies = maps:put(NodeID, Ready, Readies)}}
+            end;
         false ->
-            {true, Commitment#commitment{readies = maps:put(NodeID, Ready, Readies)}}
+            %% unknown node ID
+            {false, Commitment}
+    end.
+
+-spec add_ready_proof(commitment(), pos_integer(), binary()) -> {true | false, commitment()}.
+add_ready_proof(Commitment = #commitment{nodes=Nodes, proofs=Proofs}, NodeID, ReadyProof) when NodeID /= 0 ->
+    case lists:member(NodeID, Nodes) of
+        true ->
+            case maps:is_key(NodeID, Proofs) of
+                true ->
+                    {false, Commitment};
+                false ->
+                    {true, Commitment#commitment{proofs = maps:put(NodeID, ReadyProof, Proofs)}}
+            end;
+        false ->
+            %% unknown node ID
+            {false, Commitment}
     end.
 
 -spec num_echoes(commitment()) -> non_neg_integer().
@@ -127,9 +158,9 @@ num_readies(#commitment{readies=Readies}) ->
 echoes(#commitment{echoes=Echoes}) ->
     Echoes.
 
--spec readies(commitment()) -> readies().
-readies(#commitment{readies=Readies}) ->
-    Readies.
+-spec ready_proofs(commitment()) -> ready_proofs().
+ready_proofs(#commitment{proofs=Proofs}) ->
+    Proofs.
 
 -spec matrix(commitment()) -> dkg_commitmentmatrix:matrix().
 matrix(#commitment{matrix=Matrix}) ->
@@ -147,22 +178,26 @@ serialize(#commitment{binary_matrix=BinMatrix,
                       generator=Generator,
                       nodes=Nodes,
                       echoes=Echoes,
-                      readies=Readies}) ->
+                      readies=Readies,
+                      proofs=Proofs}) ->
     #serialized_commitment{binary_matrix=BinMatrix,
                            generator=erlang_pbc:element_to_binary(Generator),
                            nodes=Nodes,
                            echoes=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Echoes),
-                           readies=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Readies)}.
+                           readies=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Readies),
+                           proofs=Proofs}.
 
 -spec deserialize(serialized_commitment(), erlang_pbc:element()) -> commitment().
 deserialize(#serialized_commitment{binary_matrix=SerializedMatrix,
                                    generator=SerializedGenerator,
                                    nodes=Nodes,
                                    echoes=Echoes,
-                                   readies=Readies}, U) ->
+                                   readies=Readies,
+                                   proofs=Proofs}, U) ->
     #commitment{matrix=dkg_commitmentmatrix:deserialize(SerializedMatrix, U),
                 binary_matrix=SerializedMatrix,
                 generator=erlang_pbc:binary_to_element(U, SerializedGenerator),
                 nodes=Nodes,
+                proofs=Proofs,
                 echoes=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Echoes),
                 readies=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Readies)}.

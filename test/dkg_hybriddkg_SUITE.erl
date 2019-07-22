@@ -83,7 +83,7 @@ split_key_test(Config) ->
     T = proplists:get_value(t, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
 
-    BaseConfig = [N, F, T, G1, G2, {1, 0}, [{elections, true}]],
+    BaseConfig = [N, F, T, G1, G2, <<0>>, [{elections, true}]],
 
     Init =
         fun() ->
@@ -145,7 +145,7 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, Options)),
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, <<0>>, Options)),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
 

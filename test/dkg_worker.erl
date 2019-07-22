@@ -15,7 +15,7 @@
           curve :: 'SS512' | 'MNT224',
           g1 :: erlang_pbc:element(),
           g2 :: erlang_pbc:element(),
-          round :: non_neg_integer(),
+          round :: binary(),
           privkey :: undefined | tpke_privkey:privkey()
          }).
 
@@ -103,7 +103,7 @@ do_send([{multicast, Msg}|T], State) ->
 
 %% helper functions
 update_dkg(DKG, State)->
-    NewDKG = dkg_hybriddkg:deserialize(dkg_hybriddkg:serialize(DKG), State#state.g1),
+    NewDKG = dkg_hybriddkg:deserialize(dkg_hybriddkg:serialize(DKG), State#state.g1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
     State#state{dkg=NewDKG}.
 
 name(N) ->

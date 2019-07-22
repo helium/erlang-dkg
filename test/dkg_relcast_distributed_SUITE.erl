@@ -94,7 +94,7 @@ run(N, F, T, Curve, G1, G2, Nodes, DataDir) ->
                                  {g1, erlang_pbc:element_to_binary(G1)},
                                  {g2, erlang_pbc:element_to_binary(G2)},
                                  {data_dir, DataDir},
-                                 {round, 0}]])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
+                                 {round, <<0>>}]])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
     ok = global:sync(),
 
     ct:pal("workers ~p", [Workers]),

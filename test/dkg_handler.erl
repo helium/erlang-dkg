@@ -88,8 +88,8 @@ callback_message(Actor, Message, _State) ->
             term_to_binary({Id, {send, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}});
         {Id, {echo, {Session, SerializedCommitment, Shares}}} ->
             term_to_binary({Id, {echo, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}});
-        {Id, {ready, {Session, SerializedCommitment, Shares}}} ->
-            term_to_binary({Id, {ready, {Session, SerializedCommitment, lists:nth(Actor, Shares)}}})
+        {Id, {ready, {Session, SerializedCommitment, Shares, Proof}}} ->
+            term_to_binary({Id, {ready, {Session, SerializedCommitment, lists:nth(Actor, Shares), Proof}}})
     end.
 
 
@@ -110,7 +110,7 @@ deserialize(Binary) ->
     Group = erlang_pbc:group_new(State#state.curve),
     G1 = erlang_pbc:binary_to_element(Group, State#state.g1),
     G2 = erlang_pbc:binary_to_element(Group, State#state.g2),
-    DKG = dkg_hybriddkg:deserialize(State#state.dkg, G1),
+    DKG = dkg_hybriddkg:deserialize(State#state.dkg, G1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
     PrivKey = case State#state.privkey of
         undefined ->
             undefined;
