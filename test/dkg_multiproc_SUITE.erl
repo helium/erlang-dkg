@@ -40,7 +40,7 @@ asymmetric_test(Config) ->
     run(N, F, T, 'MNT224', G1, G2).
 
 run(N, F, T, Curve, G1, G2) ->
-    Workers = [ element(2, dkg_worker:start_link(Id, N, F, T, Curve, G1, G2, 0)) || Id <- lists:seq(1, N) ],
+    Workers = [ element(2, dkg_worker:start_link(Id, N, F, T, Curve, G1, G2, <<0>>)) || Id <- lists:seq(1, N) ],
 
     [ dkg_worker:start_round(Worker) || Worker <- Workers ],
     %% wait for DKG to complete

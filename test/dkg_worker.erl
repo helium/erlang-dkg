@@ -15,7 +15,7 @@
           curve :: 'SS512' | 'MNT224',
           g1 :: erlang_pbc:element(),
           g2 :: erlang_pbc:element(),
-          round :: non_neg_integer(),
+          round :: binary(),
           privkey :: undefined | tpke_privkey:privkey()
          }).
 
@@ -45,7 +45,7 @@ init([Id, N, F, T, Curve, G10, G20, Round]) ->
                    false ->
                        {G10, G20}
                end,
-    DKG = dkg_hybriddkg:init(Id, N, F, T, G1, G2, Round, []),
+    DKG = dkg_hybriddkg:init(Id, N, F, T, G1, G2, Round, [{signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]),
     {ok, #state{n=N, f=F, t=T, id=Id, curve=Curve, g1=G1, g2=G2, round=Round, dkg=DKG}}.
 
 handle_call(is_done, _From, State) ->
@@ -103,7 +103,7 @@ do_send([{multicast, Msg}|T], State) ->
 
 %% helper functions
 update_dkg(DKG, State)->
-    NewDKG = dkg_hybriddkg:deserialize(dkg_hybriddkg:serialize(DKG), State#state.g1),
+    NewDKG = dkg_hybriddkg:deserialize(dkg_hybriddkg:serialize(DKG), State#state.g1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
     State#state{dkg=NewDKG}.
 
 name(N) ->

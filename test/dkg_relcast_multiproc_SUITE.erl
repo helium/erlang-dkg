@@ -20,7 +20,7 @@ init_per_testcase(TestCase, Config) ->
     T = ((N - 1) div 3) - 1,
     F = 1,
     Module = dkg_hybriddkg,
-    Round = 0,
+    Round = <<0>>,
     DataDir = atom_to_list(?MODULE) ++ atom_to_list(TestCase) ++ "data",
     [{n, N}, {f, F}, {t, T}, {round, Round}, {module, Module}, {data_dir, DataDir} | Config].
 

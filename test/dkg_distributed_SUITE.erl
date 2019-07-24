@@ -83,7 +83,7 @@ run(N, F, T, Curve, G1, G2, Nodes) ->
     Workers = [{Node, rpc:call(Node,
                                dkg_worker,
                                start_link,
-                               [I, N, F, T, Curve, erlang_pbc:element_to_binary(G1), erlang_pbc:element_to_binary(G2), 0])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
+                               [I, N, F, T, Curve, erlang_pbc:element_to_binary(G1), erlang_pbc:element_to_binary(G2), <<0>>])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
     ok = global:sync(),
 
     ct:pal("workers ~p", [Workers]),

@@ -62,7 +62,7 @@ fake_symmetric(Config) ->
     Curve = 'SS512',
     {G1, G2} = dkg_test_utils:generate(Curve),
 
-    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    TestArgs = [N, F, T, G1, G2, {1, <<0>>}, false, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end],
     Init = fun() ->
                    {ok,
                     #fc_conf{
@@ -103,7 +103,7 @@ fake_asymmetric(Config) ->
     T = proplists:get_value(t, Config),
     Curve = 'MNT224',
     {G1, G2} = dkg_test_utils:generate(Curve),
-    TestArgs = [N, F, T, G1, G2, {1, 0}, false],
+    TestArgs = [N, F, T, G1, G2, {1, <<0>>}, false, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end],
     Init = fun() ->
                    {ok,
                     #fc_conf{
@@ -124,7 +124,7 @@ fake_asymmetric(Config) ->
 
 run(Module, N, F, T, Curve, G1, G2) ->
 
-    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, 0}, false) || Id <- lists:seq(1, N) ],
+    [Dealer | Rest] = [ Module:init(Id, N, F, T, G1, G2, {1, <<0>>}, false, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end) || Id <- lists:seq(1, N) ],
 
     Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
 

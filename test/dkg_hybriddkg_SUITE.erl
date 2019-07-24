@@ -3,6 +3,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("relcast/include/fakecast.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
@@ -10,7 +11,9 @@
          asymmetric_test/1,
          leader_change_symmetric_test/1,
          leader_change_asymmetric_test/1,
-         split_key_test/1
+         split_key_test/1,
+         sign_verify_test/1,
+         sign_verify_fail_test/1
         ]).
 
 all() ->
@@ -19,7 +22,9 @@ all() ->
      asymmetric_test,
      leader_change_symmetric_test,
      leader_change_asymmetric_test,
-     split_key_test
+     split_key_test,
+     sign_verify_test,
+     sign_verify_fail_test
     ].
 
 init_per_testcase(_, Config) ->
@@ -59,7 +64,7 @@ leader_change_symmetric_test(Config) ->
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}]).
+    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
 
 leader_change_asymmetric_test(Config) ->
     N = proplists:get_value(n, Config),
@@ -68,7 +73,49 @@ leader_change_asymmetric_test(Config) ->
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
     {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader, [{elections, true}]).
+    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
+
+sign_verify_test(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Keys = [ begin
+                 PrivKey = public_key:generate_key({namedCurve,?secp256r1}),
+                 #'ECPrivateKey'{parameters=_Params, publicKey=PubKey} = PrivKey,
+                 {PrivKey, {#'ECPoint'{point = PubKey}, {namedCurve, ?secp256r1}}}
+             end || _ <- lists:seq(1, N)],
+
+    VerifyFun = fun(Id, Msg, Signature) ->
+                        {_, PubKey} = lists:nth(Id, Keys),
+                        public_key:verify(Msg, sha256, Signature, PubKey)
+                end,
+    SigFuns = [ fun(Msg) -> public_key:sign(Msg, sha256, PrivKey) end || {PrivKey, _} <- Keys ],
+    InitialLeader = 2,
+    Module = proplists:get_value(module, Config),
+    {G1, G2} = dkg_test_utils:generate('SS512'),
+    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}]).
+
+sign_verify_fail_test(Config) ->
+    N = proplists:get_value(n, Config),
+    F = proplists:get_value(f, Config),
+    T = proplists:get_value(t, Config),
+    Keys = [ begin
+                 PrivKey = public_key:generate_key({namedCurve,?secp256r1}),
+                 #'ECPrivateKey'{parameters=_Params, publicKey=PubKey} = PrivKey,
+                 {PrivKey, {#'ECPoint'{point = PubKey}, {namedCurve, ?secp256r1}}}
+             end || _ <- lists:seq(1, N)],
+
+    VerifyFun = fun(Id, Msg, Signature) ->
+                        %% XXX reverse the key order, so nothing can be verified
+                        {_, PubKey} = lists:nth(Id, lists:reverse(Keys)),
+                        public_key:verify(Msg, sha256, Signature, PubKey)
+                end,
+    SigFuns = [ fun(Msg) -> public_key:sign(Msg, sha256, PrivKey) end || {PrivKey, _} <- Keys ],
+    InitialLeader = 2,
+    Module = proplists:get_value(module, Config),
+    {G1, G2} = dkg_test_utils:generate('SS512'),
+    ?assertException(error, {assertEqual, _}, run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}])).
+
 
 -record(sk_state,
         {
@@ -83,7 +130,7 @@ split_key_test(Config) ->
     T = proplists:get_value(t, Config),
     {G1, G2} = dkg_test_utils:generate('SS512'),
 
-    BaseConfig = [N, F, T, G1, G2, {1, 0}, [{elections, true}]],
+    BaseConfig = [N, F, T, G1, G2, <<0>>, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]],
 
     Init =
         fun() ->
@@ -141,11 +188,20 @@ sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
 
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
-    run(N, F, T, Module, Curve, G1, G2, InitialLeader, []).
+    run(N, F, T, Module, Curve, G1, G2, InitialLeader, [{signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
 
 run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, {1, 0}, Options)),
+                                                            %% check if we have a real, per node, sig fun
+                                                            SigFun = case proplists:get_value(signfuns, Options) of
+                                                                         undefined ->
+                                                                             {signfun, S} = lists:keyfind(signfun, 1, Options),
+                                                                             S;
+                                                                         SigFuns when is_list(SigFuns) ->
+                                                                             lists:nth(E, SigFuns)
+                                                                     end,
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, <<0>>,
+                                                                                                       lists:keystore(signfun, 1, Options, {signfun, SigFun}))),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
 
