@@ -21,7 +21,8 @@
           privkey :: undefined | tpke_privkey:privkey() | tpke_privkey:privkey_serialized(),
           n :: pos_integer(),
           t :: pos_integer(),
-          id :: pos_integer()
+          id :: pos_integer(),
+          bomb = 10 :: integer()
          }).
 
 init(DKGArgs) ->
@@ -60,7 +61,8 @@ handle_command(Msg, _State) ->
     ct:pal("unhandled handle_command, Msg: ~p", [Msg]),
     {reply, ok, ignore}.
 
-handle_message(Msg, Actor, State) ->
+handle_message(Msg, Actor, #state{bomb = Bomb0} = State) ->
+    Bomb = Bomb0 - 1,
     case dkg_hybriddkg:handle_msg(State#state.dkg, Actor, binary_to_term(Msg)) of
         {_DKG, ignore} -> ignore;
         {DKG, ok} ->
@@ -75,11 +77,11 @@ handle_message(Msg, Actor, State) ->
                                       State#state.curve),
             PrivKey = tpke_privkey:init(PubKey, Shard, State#state.id - 1),
 
-            {State#state{dkg=DKG, privkey=PrivKey}, []};
+            {State#state{dkg=DKG, privkey=PrivKey, bomb=Bomb}, []};
         {DKG, {send, ToSend}} ->
-            {State#state{dkg=DKG}, fixup_msgs(ToSend)};
+            {State#state{dkg=DKG, bomb=Bomb}, fixup_msgs(ToSend)};
         {DKG, start_timer} ->
-            {State#state{dkg=DKG}, []}
+            {State#state{dkg=DKG, bomb=Bomb}, []}
     end.
 
 callback_message(Actor, Message, _State) ->
@@ -97,27 +99,55 @@ serialize(State) ->
     SerializedDKG = dkg_hybriddkg:serialize(State#state.dkg),
     G1 = erlang_pbc:element_to_binary(State#state.g1),
     G2 = erlang_pbc:element_to_binary(State#state.g2),
-    PrivKey = case State#state.privkey of
-                  undefined ->
-                      undefined;
-                  Other ->
-                      tpke_privkey:serialize(Other)
-              end,
-    term_to_binary(State#state{dkg=SerializedDKG, privkey=PrivKey, g1=G1, g2=G2}).
+    Map = #{dkg => SerializedDKG,
+            round => term_to_binary(State#state.round),
+            curve => term_to_binary(State#state.curve),
+            n => term_to_binary(State#state.n),
+            t => term_to_binary(State#state.t),
+            id => term_to_binary(State#state.id),
+            g1 => G1,
+            g2 => G2},
+    case State#state.privkey of
+        undefined ->
+            Map;
+        Other ->
+            maps:put(privkey, term_to_binary(tpke_privkey:serialize(Other)), Map)
+    end.
 
-deserialize(Binary) ->
-    State = binary_to_term(Binary),
-    Group = erlang_pbc:group_new(State#state.curve),
-    G1 = erlang_pbc:binary_to_element(Group, State#state.g1),
-    G2 = erlang_pbc:binary_to_element(Group, State#state.g2),
-    DKG = dkg_hybriddkg:deserialize(State#state.dkg, G1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
-    PrivKey = case State#state.privkey of
+deserialize(Map) ->
+    #{round := Round0,
+      curve := Curve0,
+      n := N0,
+      t := T0,
+      id := ID0,
+      g1 := G1_0,
+      g2 := G2_0,
+      privkey := PrivKey0,
+      dkg := DKG0} = Map,
+    Curve = binary_to_term(Curve0),
+    Round = binary_to_term(Round0),
+    N = binary_to_term(N0),
+    T = binary_to_term(T0),
+    ID = binary_to_term(ID0),
+
+    Group = erlang_pbc:group_new(Curve),
+    G1 = erlang_pbc:binary_to_element(Group, G1_0),
+    G2 = erlang_pbc:binary_to_element(Group, G2_0),
+    DKG = dkg_hybriddkg:deserialize(DKG0, G1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
+    PrivKey = case PrivKey0 of
         undefined ->
             undefined;
         Other ->
-            tpke_privkey:deserialize(Other)
+            tpke_privkey:deserialize(binary_to_term(Other))
     end,
-    #state{dkg=DKG, privkey=PrivKey, g1=G1, g2=G2}.
+    #state{dkg=DKG,
+           privkey=PrivKey,
+           n = N,
+           t = T,
+           id = ID,
+           curve = Curve,
+           round = Round,
+           g1=G1, g2=G2}.
 
 restore(OldState, _NewState) ->
     {ok, OldState}.

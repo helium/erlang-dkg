@@ -239,55 +239,65 @@ handle_msg(VSS, _Sender, _Msg) ->
     %% we're likely done here, so there's no point in processing more messages
     {VSS, ignore}.
 
--spec serialize(vss()) -> serialized_vss().
-serialize(#vss{id=Id,
-               n=N,
-               f=F,
-               t=T,
-               u=U,
-               u2=U2,
-               done=Done,
-               session=Session,
-               received_commitment=ReceivedCommitment,
-               commitments=Commitments,
-               callback=Callback}) ->
-    #serialized_vss{id=Id,
-                    n=N,
-                    f=F,
-                    t=T,
-                    u=erlang_pbc:element_to_binary(U),
-                    u2=erlang_pbc:element_to_binary(U2),
-                    done=Done,
-                    session=Session,
-                    received_commitment=ReceivedCommitment,
-                    commitments=maps:map(fun(_, V) -> dkg_commitment:serialize(V) end, Commitments),
-                    callback=Callback}.
+-spec serialize(vss()) -> #{atom() => binary() | map()}.
+serialize(#vss{id = Id,
+               n = N,
+               f = F,
+               t = T,
+               u = U,
+               u2 = U2,
+               done = Done,
+               session = Session,
+               received_commitment = ReceivedCommitment,
+               commitments = Commitments,
+               callback = Callback}) ->
+    PreSer = #{u => erlang_pbc:element_to_binary(U),
+               u2 => erlang_pbc:element_to_binary(U2)},
+    M0 = #{id => Id,
+           commitments => maps:map(fun(_, V) -> dkg_commitment:serialize(V) end,
+                                   Commitments),
+           n => N,
+           f => F,
+           t => T,
+           done => Done,
+           session => Session,
+           received_commitment => ReceivedCommitment,
+           callback => Callback},
+    M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
+    maps:merge(PreSer, M).
 
--spec deserialize(serialized_vss(), erlang_pbc:element(), fun(), fun()) -> vss().
-deserialize(#serialized_vss{id=Id,
-                            n=N,
-                            f=F,
-                            t=T,
-                            u=SerializedU,
-                            u2=SerializedU2,
-                            done=Done,
-                            session=Session,
-                            received_commitment=ReceivedCommitment,
-                            commitments=SerializedCommitments,
-                            callback=Callback}, Element, SignFun, VerifyFun) ->
-    #vss{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=erlang_pbc:binary_to_element(Element, SerializedU),
-         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         done=Done,
-         session=Session,
-         received_commitment=ReceivedCommitment,
-         commitments=maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments),
-         signfun=SignFun,
-         verifyfun=VerifyFun,
-         callback=Callback}.
+-spec deserialize(serialized_vss() | #{atom() => binary() | map()}, erlang_pbc:element(), fun(), fun()) -> vss().
+deserialize(Map0, Element, SignFun, VerifyFun) ->
+    Map = maps:map(fun(K, V) when K == u; K == u2;
+                                  K == shares_results ->
+                           V;
+                      (_K, B) ->
+                           binary_to_term(B)
+                   end, Map0),
+    #{id := Id,
+      n := N,
+      f := F,
+      t := T,
+      u := SerializedU,
+      u2 := SerializedU2,
+      done := Done,
+      session := Session,
+      received_commitment := ReceivedCommitment,
+      commitments := SerializedCommitments,
+      callback := Callback} = Map,
+    #vss{id = Id,
+         n = N,
+         f = F,
+         t = T,
+         u = erlang_pbc:binary_to_element(Element, SerializedU),
+         u2 = erlang_pbc:binary_to_element(Element, SerializedU2),
+         done = Done,
+         session = Session,
+         received_commitment = ReceivedCommitment,
+         commitments = maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments),
+         signfun = SignFun,
+         verifyfun = VerifyFun,
+         callback = Callback}.
 
 -spec status(vss()) -> map().
 status(VSS) ->

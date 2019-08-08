@@ -530,111 +530,185 @@ verify_proofs({vss_ready_proofs, Proofs}, DKG = #dkg{n=N, t=T, f=F}) ->
             false
     end.
 
--spec serialize(dkg()) -> serialized_dkg().
-serialize(#dkg{id=Id,
-               n=N,
-               f=F,
-               t=T,
-               u=U,
-               u2=U2,
-               shares_map=SharesMap,
-               shares_results=SharesResults,
-               shares_acked=SharesAcked,
-               shares_seen=SharesSeen,
-               vss_ready_proofs=ReadyProofs,
-               echo_proofs=Echo_Proofs,
-               echo_counts=EchoCount,
-               ready_counts=ReadyCounts,
-               leader_changing=LeaderChanging,
-               leader=Leader,
-               leader_cap=LeaderCap,
-               leader_vote_counts=LeaderVoteCounts,
-               await_vss=AwaitVSS}) ->
-    #serialized_dkg{id=Id,
-                    n=N,
-                    f=F,
-                    t=T,
-                    u=erlang_pbc:element_to_binary(U),
-                    u2=erlang_pbc:element_to_binary(U2),
-                    shares_map=serialize_shares_map(SharesMap),
-                    shares_results=serialize_shares_results(SharesResults),
-                    shares_seen=SharesSeen,
-                    shares_acked=SharesAcked,
-                    vss_ready_proofs=ReadyProofs,
-                    echo_proofs=Echo_Proofs,
-                    echo_counts=EchoCount,
-                    ready_counts=ReadyCounts,
-                    leader_changing=LeaderChanging,
-                    leader=Leader,
-                    leader_cap=LeaderCap,
-                    leader_vote_counts=LeaderVoteCounts,
-                    await_vss=AwaitVSS}.
+-spec serialize(dkg()) -> #{atom() => map() | binary()}.
+serialize(#dkg{id = Id,
+               n = N,
+               f = F,
+               t = T,
+               u = U,
+               u2 = U2,
+               shares_map = SharesMap,
+               shares_results = SharesResults,
+               shares_acked = SharesAcked,
+               shares_seen = SharesSeen,
+               vss_ready_proofs = ReadyProofs,
+               echo_proofs = Echo_Proofs,
+               echo_counts = EchoCount,
+               ready_counts = ReadyCounts,
+               leader_changing = LeaderChanging,
+               leader = Leader,
+               leader_cap = LeaderCap,
+               leader_vote_counts = LeaderVoteCounts,
+               await_vss = AwaitVSS}) ->
+    PreSer = #{u => erlang_pbc:element_to_binary(U),
+               u2 => erlang_pbc:element_to_binary(U2),
+               shares_map => serialize_shares_map(SharesMap),
+               shares_results => serialize_shares_results(SharesResults)},
+    M0 = #{id => Id,
+           n => N,
+           f => F,
+           t => T,
+           shares_seen => SharesSeen,
+           shares_acked => SharesAcked,
+           vss_ready_proofs => ReadyProofs,
+           echo_proofs => Echo_Proofs,
+           echo_counts => EchoCount,
+           ready_counts => ReadyCounts,
+           leader_changing => LeaderChanging,
+           leader => Leader,
+           leader_cap => LeaderCap,
+           leader_vote_counts => LeaderVoteCounts,
+           await_vss => AwaitVSS},
+    M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
+    maps:merge(PreSer, M).
 
--spec deserialize(serialized_dkg(), erlang_pbc:element(), fun(), fun()) -> dkg().
-deserialize(#serialized_dkg{id=Id,
-                            n=N,
-                            f=F,
-                            t=T,
-                            u=SerializedU,
-                            u2=SerializedU2,
-                            shares_map=SerializedSharesMap,
-                            shares_results=SerializedSharesResults,
-                            shares_acked=SharesAcked,
-                            shares_seen=SharesSeen,
-                            vss_ready_proofs=ReadyProofs,
-                            echo_proofs=Echo_Proofs,
-                            echo_counts=EchoCount,
-                            ready_counts=ReadyCounts,
-                            leader_changing=LeaderChanging,
-                            leader=Leader,
-                            leader_cap=LeaderCap,
+-spec deserialize(serialized_dkg() | #{}, erlang_pbc:element(), fun(), fun()) -> dkg().
+deserialize(#serialized_dkg{id = Id,
+                            n = N,
+                            f = F,
+                            t = T,
+                            u = SerializedU,
+                            u2 = SerializedU2,
+                            shares_map = SerializedSharesMap,
+                            shares_results = SerializedSharesResults,
+                            shares_acked = SharesAcked,
+                            shares_seen = SharesSeen,
+                            vss_ready_proofs = ReadyProofs,
+                            echo_proofs = Echo_Proofs,
+                            echo_counts = EchoCount,
+                            ready_counts = ReadyCounts,
+                            leader_changing = LeaderChanging,
+                            leader = Leader,
+                            leader_cap = LeaderCap,
                             %% XXX: Only one element is enough?
                             %% presumably we need to generate U and U2 again to deserialize? Not sure...
-                            leader_vote_counts=LeaderVoteCounts,
-                            await_vss=AwaitVSS}, Element, SignFun, VerifyFun) ->
-    #dkg{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=erlang_pbc:binary_to_element(Element, SerializedU),
-         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         shares_map=deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun),
-         shares_results=deserialize_shares_results(SerializedSharesResults, Element),
-         shares_acked=SharesAcked,
-         shares_seen=SharesSeen,
-         vss_ready_proofs=ReadyProofs,
-         echo_proofs=Echo_Proofs,
-         echo_counts=EchoCount,
-         ready_counts=ReadyCounts,
-         leader_changing=LeaderChanging,
-         leader=Leader,
-         leader_cap=LeaderCap,
-         leader_vote_counts=LeaderVoteCounts,
-         await_vss=AwaitVSS}.
+                            leader_vote_counts = LeaderVoteCounts,
+                            await_vss = AwaitVSS}, Element, SignFun, VerifyFun) ->
+    #dkg{id = Id,
+         n = N,
+         f = F,
+         t = T,
+         u = erlang_pbc:binary_to_element(Element, SerializedU),
+         u2 = erlang_pbc:binary_to_element(Element, SerializedU2),
+         shares_map = deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun),
+         shares_results = deserialize_shares_results(SerializedSharesResults, Element),
+         shares_acked = SharesAcked,
+         shares_seen = SharesSeen,
+         vss_ready_proofs = ReadyProofs,
+         echo_proofs = Echo_Proofs,
+         echo_counts = EchoCount,
+         ready_counts = ReadyCounts,
+         leader_changing = LeaderChanging,
+         leader = Leader,
+         leader_cap = LeaderCap,
+         leader_vote_counts = LeaderVoteCounts,
+         await_vss = AwaitVSS};
+deserialize(Map0, Element, SignFun, VerifyFun) when is_map(Map0) ->
+    Map = maps:map(fun(K, V) when K == u; K == u2;
+                                  K == shares_map;
+                                  K == shares_results ->
+                           V;
+                      (_K, B) ->
+                           binary_to_term(B)
+                   end, Map0),
+        #{id := Id,
+          n := N,
+          f := F,
+          t := T,
+          u := SerializedU,
+          u2 := SerializedU2,
+          shares_map := SerializedSharesMap,
+          shares_results := SerializedSharesResults,
+          shares_acked := SharesAcked,
+          shares_seen := SharesSeen,
+          vss_ready_proofs := ReadyProofs,
+          echo_proofs := Echo_Proofs,
+          echo_counts := EchoCount,
+          ready_counts := ReadyCounts,
+          leader_changing := LeaderChanging,
+          leader := Leader,
+          leader_cap := LeaderCap,
+          %% XXX: Only one element is enough?
+          %% presumably we need to generate U and U2 again to deserialize? Not sure...
+          leader_vote_counts := LeaderVoteCounts,
+          await_vss := AwaitVSS} = Map,
+    #dkg{id = Id,
+         n = N,
+         f = F,
+         t = T,
+         u = erlang_pbc:binary_to_element(Element, SerializedU),
+         u2 = erlang_pbc:binary_to_element(Element, SerializedU2),
+         shares_map = deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun),
+         shares_results = deserialize_shares_results(SerializedSharesResults, Element),
+         shares_acked = SharesAcked,
+         shares_seen = SharesSeen,
+         vss_ready_proofs = ReadyProofs,
+         echo_proofs = Echo_Proofs,
+         echo_counts = EchoCount,
+         ready_counts = ReadyCounts,
+         leader_changing = LeaderChanging,
+         leader = Leader,
+         leader_cap = LeaderCap,
+         leader_vote_counts = LeaderVoteCounts,
+         await_vss = AwaitVSS}.
 
 -spec serialize_shares_map(shares_map()) -> serialized_shares_map().
 serialize_shares_map(SharesMap) ->
     maps:fold(fun(K, Shares, Acc) ->
-                      maps:put(K, dkg_hybridvss:serialize(Shares), Acc)
+                      Name = shares_name(K),
+                      maps:put(Name, dkg_hybridvss:serialize(Shares), Acc)
               end, #{}, SharesMap).
 
 -spec deserialize_shares_map(serialized_shares_map(), erlang_pbc:element(), fun(), fun()) -> shares_map().
 deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun) ->
     maps:fold(fun(K, Shares, Acc) ->
-                      maps:put(K, dkg_hybridvss:deserialize(Shares, Element, SignFun, VerifyFun), Acc)
+                      Name = shares_name(K),
+                      maps:put(Name, dkg_hybridvss:deserialize(Shares, Element, SignFun, VerifyFun), Acc)
               end, #{}, SerializedSharesMap).
+
+shares_name(N) when is_integer(N) ->
+    list_to_atom("share_" ++ integer_to_list(N));
+shares_name(Key) when is_atom(Key) ->
+    L = atom_to_list(Key),
+    "share_" ++ Int = L,
+    list_to_integer(Int).
 
 -spec serialize_shares_results(shares_results()) -> serialized_shares_results().
 serialize_shares_results(SharesResults) ->
     maps:fold(fun(K, {C, Si}, Acc) ->
-                      maps:put(K, {dkg_commitment:serialize(C), erlang_pbc:element_to_binary(Si)}, Acc)
+                      Name = result_name(K),
+                      Ser = term_to_binary({dkg_commitment:serialize(C),
+                                            erlang_pbc:element_to_binary(Si)},
+                                           [compressed]),
+                      maps:put(Name, Ser, Acc)
               end, #{}, SharesResults).
 
--spec deserialize_shares_results(serialized_shares_results(), erlang_pbc:element()) -> shares_results().
+-spec deserialize_shares_results(serialized_shares_results(), erlang_pbc:element()) ->
+                                        shares_results().
 deserialize_shares_results(SerializedSharesResults, U) ->
-    maps:fold(fun(K, {C, Si}, Acc) ->
-                      maps:put(K, {dkg_commitment:deserialize(C, U), erlang_pbc:binary_to_element(U, Si)}, Acc)
+    maps:fold(fun(K, Bin, Acc) ->
+                      Name = result_name(K),
+                      {C, Si} = binary_to_term(Bin),
+                      maps:put(Name, {dkg_commitment:deserialize(C, U),
+                                      erlang_pbc:binary_to_element(U, Si)}, Acc)
               end, #{}, SerializedSharesResults).
+
+result_name(N) when is_integer(N) ->
+    list_to_atom("result_" ++ integer_to_list(N));
+result_name(Key) when is_atom(Key) ->
+    L = atom_to_list(Key),
+    "result_" ++ Int = L,
+    list_to_integer(Int).
 
 -spec status(dkg()) -> map().
 status(DKG) ->
