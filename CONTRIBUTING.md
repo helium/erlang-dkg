@@ -6,11 +6,11 @@ our way or a bug to report:
 
 * **Contributing Code**: If you have new code or a bug fix, fork this
   repo, create a logically-named branch, and [submit a PR against this
-  repo](https://github.com/helium/libp2p_crypto/issues). Include a
+  repo](https://github.com/helium/erlang-dkg/issues). Include a
   write up of the PR with details on what it does.
 
 * **Reporting Bugs**: Open an issue [against this
-  repo](https://github.com/helium/libp2p_crypto/issues) with as much
+  repo](https://github.com/helium/erlang-dkg/issues) with as much
   detail as you can. At the very least you'll include steps to
   reproduce the problem.
 
