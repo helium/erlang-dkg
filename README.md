@@ -10,11 +10,10 @@ processes (where N >= 4) to generate one PBC (see
 [here](https://github.com/helium/erlang-pbc) for more details) key in
 a manner tolerant of Byzantine faults.
 
-Some limitations, where this code does not implement the full
-protocol:
- - It does not support leader changes.
+Some limitations, where this code does not implement the full protocol:
+ - It does not implement the pessimistic phase (leadger change). We handle that using erlang-libp2p and relcast.
+ - It does not implement the recovery phase. For our use case, we simply run a new DKG if a previous one didn't succeed.
  - It produces only one key, as it does not support round changes.
- - It does not implement the recovery protocol.
  
 This code is not run directly, but as a
 [relcast](https://github.com/helium/relcast) behavior. To see an example of how this code is run and used, see
