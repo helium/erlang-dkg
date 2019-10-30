@@ -11,7 +11,7 @@ processes (where N >= 4) to generate one PBC (see
 a manner tolerant of Byzantine faults.
 
 Some limitations, where this code does not implement the full protocol:
- - It does not implement the pessimistic phase (leadger change). We handle that using erlang-libp2p and relcast.
+ - It does not implement the pessimistic phase (leader change).  Recovery (or rather retry) is handled outside of the protocol.
  - It does not implement the recovery phase. For our use case, we simply run a new DKG if a previous one didn't succeed.
  - It produces only one key, as it does not support round changes.
  
