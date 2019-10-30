@@ -6,7 +6,8 @@ erlang-dkg
 An implementation of the protocol described in "Distributed Key
 Generation in the Wild" (see references) for Erlang (using pairing
 based cryptography).  This library will allow some number of Erlang
-processes (where N >= 4) to generate one PCK key in SOME FORMAT TK in
+processes (where N >= 4) to generate one PBC (see
+[here](https://github.com/helium/erlang-pbc) for more details) key in
 a manner tolerant of Byzantine faults.
 
 Some limitations, where this code does not implement the full
