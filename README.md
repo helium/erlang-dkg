@@ -3,8 +3,22 @@ erlang-dkg
 [![Build Status](https://badge.buildkite.com/6933d2231530c47800b727a796af13ac90faabcffbe12af487.svg?branch=master)](https://buildkite.com/helium/erlang-dkg)
 [![codecov](https://codecov.io/gh/helium/erlang-dkg/branch/master/graph/badge.svg)](https://codecov.io/gh/helium/erlang-dkg)
 
-Distributed key generation for Erlang (using pairing based cryptography)
+An implementation of the protocol described in "Distributed Key
+Generation in the Wild" (see references) for Erlang (using pairing
+based cryptography).  This library will allow some number of Erlang
+processes (where N >= 4) to generate one PCK key in SOME FORMAT TK in
+a manner tolerant of Byzantine faults.
 
+Some limitations, where this code does not implement the full
+protocol:
+ - It does not support leader changes.
+ - It produces only one key, as it does not support round changes.
+ - It does not implement the recovery protocol.
+ 
+This code is not run directly, but as a
+[relcast](https://github.com/helium/relcast) behavior. To see an example of how this code is run and used, see
+[here](https://github.com/helium/miner/blob/master/src/handlers/miner_dkg_handler.erl).
+ 
 Build
 -----
 
