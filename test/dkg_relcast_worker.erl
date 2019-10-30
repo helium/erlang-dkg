@@ -39,7 +39,8 @@ init(Args) ->
     ID = proplists:get_value(id, Args),
     DataDir = proplists:get_value(data_dir, Args),
     Members = lists:seq(1, N),
-    {ok, Relcast} = relcast:start(ID, Members, dkg_handler, Args, [{data_dir, DataDir ++ integer_to_list(ID)}]),
+    {ok, Relcast} = relcast:start(ID, Members, dkg_handler, Args, [{data_dir, DataDir ++ integer_to_list(ID)},
+                                                                   {create, true}]),
     Peers = maps:from_list([{I, undefined} || I <- Members, I /= ID ]),
     {ok, do_send(#state{relcast=Relcast, id=ID, peers=Peers})}.
 
