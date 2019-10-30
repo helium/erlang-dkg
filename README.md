@@ -11,9 +11,9 @@ processes (where N >= 4) to generate one PBC (see
 a manner tolerant of Byzantine faults.
 
 Some limitations, where this code does not implement the full protocol:
- - It does not implement the pessimistic phase (leader change).  Recovery (or rather retry) is handled outside of the protocol.
- - It does not implement the recovery phase. For our use case, we simply run a new DKG if a previous one didn't succeed.
  - It produces only one key, as it does not support round changes.
+ - It does not implement the pessimistic phase (leader change).  Recovery (or rather retry) is handled outside of the protocol.
+ - It does not implement the recovery phase.  Since there is no concept of rounds, a user must start a new dkg if the process fails or times out.
  
 This code is not run directly, but as a
 [relcast](https://github.com/helium/relcast) behavior. To see an example of how this code is run and used, see
