@@ -27,20 +27,6 @@
           verifyfun :: verifyfun()
          }).
 
--record(serialized_vss, {
-          done = false :: boolean(),
-          id :: pos_integer(),
-          n :: pos_integer(),
-          f :: pos_integer(),
-          t :: pos_integer(),
-          u :: binary(),
-          u2 :: binary(),
-          session :: session(),
-          received_commitment = false :: boolean(),
-          commitments = #{} :: #{binary() => dkg_commitment:serialized_commitment()},
-          callback :: boolean()
-         }).
-
 %% Note that the 'Round' here is assumed to be some unique combination of members and some strictly increasing counter(s) or nonce.
 %% For example, something like the SHA of the public keys of all the members and some global DKG counter.
 %% The counter/nonce should NOT repeat under any circumstances or ready messages may be reused to forge subsequent round results.
@@ -50,11 +36,10 @@
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 -type vss() :: #vss{}.
--type serialized_vss() :: #serialized_vss{}.
 -type signfun() :: fun((Msg :: binary()) -> Signature :: binary()).
 -type verifyfun() :: fun((Sender :: pos_integer(), Msg :: binary(), Signature :: binary()) -> boolean()).
 
--export_type([vss/0, session/0, serialized_vss/0]).
+-export_type([vss/0, session/0]).
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(),
            G1 :: erlang_pbc:element(), G2 :: erlang_pbc:element(),
@@ -266,7 +251,7 @@ serialize(#vss{id = Id,
     M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
     maps:merge(PreSer, M).
 
--spec deserialize(serialized_vss() | #{atom() => binary() | map()}, erlang_pbc:element(), fun(), fun()) -> vss().
+-spec deserialize(#{atom() => binary() | map()}, erlang_pbc:element(), fun(), fun()) -> vss().
 deserialize(Map0, Element, SignFun, VerifyFun) ->
     Map = maps:map(fun(K, V) when K == u; K == u2;
                                   K == shares_results ->

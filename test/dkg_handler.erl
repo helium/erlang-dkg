@@ -21,8 +21,7 @@
           privkey :: undefined | tpke_privkey:privkey() | tpke_privkey:privkey_serialized(),
           n :: pos_integer(),
           t :: pos_integer(),
-          id :: pos_integer(),
-          bomb = 10 :: integer()
+          id :: pos_integer()
          }).
 
 init(DKGArgs) ->
@@ -61,8 +60,7 @@ handle_command(Msg, _State) ->
     ct:pal("unhandled handle_command, Msg: ~p", [Msg]),
     {reply, ok, ignore}.
 
-handle_message(Msg, Actor, #state{bomb = Bomb0} = State) ->
-    Bomb = Bomb0 - 1,
+handle_message(Msg, Actor, State) ->
     case dkg_hybriddkg:handle_msg(State#state.dkg, Actor, binary_to_term(Msg)) of
         {_DKG, ignore} -> ignore;
         {DKG, ok} ->
@@ -77,11 +75,11 @@ handle_message(Msg, Actor, #state{bomb = Bomb0} = State) ->
                                       State#state.curve),
             PrivKey = tpke_privkey:init(PubKey, Shard, State#state.id - 1),
 
-            {State#state{dkg=DKG, privkey=PrivKey, bomb=Bomb}, []};
+            {State#state{dkg=DKG, privkey=PrivKey}, []};
         {DKG, {send, ToSend}} ->
-            {State#state{dkg=DKG, bomb=Bomb}, fixup_msgs(ToSend)};
+            {State#state{dkg=DKG}, fixup_msgs(ToSend)};
         {DKG, start_timer} ->
-            {State#state{dkg=DKG, bomb=Bomb}, []}
+            {State#state{dkg=DKG}, []}
     end.
 
 callback_message(Actor, Message, _State) ->
