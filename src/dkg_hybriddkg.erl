@@ -46,7 +46,7 @@
 -type ready_counts() :: #{identity() => [ready()]}.
 -type leader_vote_counts() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
 -type shares_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
--type serialized_shares_map() :: #{pos_integer() => #{}}.
+-type serialized_shares_map() :: #{pos_integer() => #{atom() => binary() | map()}.
 -type shares_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
 -type serialized_shares_results() :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}}.
 -type dkg() :: #dkg{}.
