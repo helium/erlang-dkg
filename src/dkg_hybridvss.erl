@@ -27,20 +27,6 @@
           verifyfun :: verifyfun()
          }).
 
--record(serialized_vss, {
-          done = false :: boolean(),
-          id :: pos_integer(),
-          n :: pos_integer(),
-          f :: pos_integer(),
-          t :: pos_integer(),
-          u :: binary(),
-          u2 :: binary(),
-          session :: session(),
-          received_commitment = false :: boolean(),
-          commitments = #{} :: #{binary() => dkg_commitment:serialized_commitment()},
-          callback :: boolean()
-         }).
-
 %% Note that the 'Round' here is assumed to be some unique combination of members and some strictly increasing counter(s) or nonce.
 %% For example, something like the SHA of the public keys of all the members and some global DKG counter.
 %% The counter/nonce should NOT repeat under any circumstances or ready messages may be reused to forge subsequent round results.
@@ -50,11 +36,10 @@
 -type ready_msg() :: {unicast, pos_integer(), {ready, {session(), dkg_commitmentmatrix:serialized_matrix(), binary()}}}.
 -type result() :: {result, {session(), dkg_commitment:commitment(), [erlang_pbc:element()]}}.
 -type vss() :: #vss{}.
--type serialized_vss() :: #serialized_vss{}.
 -type signfun() :: fun((Msg :: binary()) -> Signature :: binary()).
 -type verifyfun() :: fun((Sender :: pos_integer(), Msg :: binary(), Signature :: binary()) -> boolean()).
 
--export_type([vss/0, session/0, serialized_vss/0]).
+-export_type([vss/0, session/0]).
 
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: pos_integer(),
            G1 :: erlang_pbc:element(), G2 :: erlang_pbc:element(),
@@ -239,55 +224,65 @@ handle_msg(VSS, _Sender, _Msg) ->
     %% we're likely done here, so there's no point in processing more messages
     {VSS, ignore}.
 
--spec serialize(vss()) -> serialized_vss().
-serialize(#vss{id=Id,
-               n=N,
-               f=F,
-               t=T,
-               u=U,
-               u2=U2,
-               done=Done,
-               session=Session,
-               received_commitment=ReceivedCommitment,
-               commitments=Commitments,
-               callback=Callback}) ->
-    #serialized_vss{id=Id,
-                    n=N,
-                    f=F,
-                    t=T,
-                    u=erlang_pbc:element_to_binary(U),
-                    u2=erlang_pbc:element_to_binary(U2),
-                    done=Done,
-                    session=Session,
-                    received_commitment=ReceivedCommitment,
-                    commitments=maps:map(fun(_, V) -> dkg_commitment:serialize(V) end, Commitments),
-                    callback=Callback}.
+-spec serialize(vss()) -> #{atom() => binary() | map()}.
+serialize(#vss{id = Id,
+               n = N,
+               f = F,
+               t = T,
+               u = U,
+               u2 = U2,
+               done = Done,
+               session = Session,
+               received_commitment = ReceivedCommitment,
+               commitments = Commitments,
+               callback = Callback}) ->
+    PreSer = #{u => erlang_pbc:element_to_binary(U),
+               u2 => erlang_pbc:element_to_binary(U2)},
+    M0 = #{id => Id,
+           commitments => maps:map(fun(_, V) -> dkg_commitment:serialize(V) end,
+                                   Commitments),
+           n => N,
+           f => F,
+           t => T,
+           done => Done,
+           session => Session,
+           received_commitment => ReceivedCommitment,
+           callback => Callback},
+    M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
+    maps:merge(PreSer, M).
 
--spec deserialize(serialized_vss(), erlang_pbc:element(), fun(), fun()) -> vss().
-deserialize(#serialized_vss{id=Id,
-                            n=N,
-                            f=F,
-                            t=T,
-                            u=SerializedU,
-                            u2=SerializedU2,
-                            done=Done,
-                            session=Session,
-                            received_commitment=ReceivedCommitment,
-                            commitments=SerializedCommitments,
-                            callback=Callback}, Element, SignFun, VerifyFun) ->
-    #vss{id=Id,
-         n=N,
-         f=F,
-         t=T,
-         u=erlang_pbc:binary_to_element(Element, SerializedU),
-         u2=erlang_pbc:binary_to_element(Element, SerializedU2),
-         done=Done,
-         session=Session,
-         received_commitment=ReceivedCommitment,
-         commitments=maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments),
-         signfun=SignFun,
-         verifyfun=VerifyFun,
-         callback=Callback}.
+-spec deserialize(#{atom() => binary() | map()}, erlang_pbc:element(), fun(), fun()) -> vss().
+deserialize(Map0, Element, SignFun, VerifyFun) ->
+    Map = maps:map(fun(K, V) when K == u; K == u2;
+                                  K == shares_results ->
+                           V;
+                      (_K, B) ->
+                           binary_to_term(B)
+                   end, Map0),
+    #{id := Id,
+      n := N,
+      f := F,
+      t := T,
+      u := SerializedU,
+      u2 := SerializedU2,
+      done := Done,
+      session := Session,
+      received_commitment := ReceivedCommitment,
+      commitments := SerializedCommitments,
+      callback := Callback} = Map,
+    #vss{id = Id,
+         n = N,
+         f = F,
+         t = T,
+         u = erlang_pbc:binary_to_element(Element, SerializedU),
+         u2 = erlang_pbc:binary_to_element(Element, SerializedU2),
+         done = Done,
+         session = Session,
+         received_commitment = ReceivedCommitment,
+         commitments = maps:map(fun(_, V) -> dkg_commitment:deserialize(V, Element) end, SerializedCommitments),
+         signfun = SignFun,
+         verifyfun = VerifyFun,
+         callback = Callback}.
 
 -spec status(vss()) -> map().
 status(VSS) ->
