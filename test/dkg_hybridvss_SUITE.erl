@@ -169,10 +169,10 @@ verify_results(Secret, ConvergedResults, N, F, T, Curve, G1, G2) ->
         true ->
             Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),
             CipherText = tpke_pubkey:encrypt(PublicKey, Message),
-            ?assert(tpke_pubkey:verify_ciphertext(PublicKey, CipherText)),
-            DecShares = [tpke_privkey:decrypt_share(PrivateKey, CipherText) || PrivateKey <- PrivateKeys],
-            ?assert(lists:all(fun(E) -> E end, [tpke_pubkey:verify_share(PublicKey, DecShare, CipherText) || DecShare <- DecShares])),
-            ?assertEqual(Message, tpke_pubkey:combine_shares(PublicKey, CipherText, dealer:random_n(T+1, DecShares)));
+            {ok, VerifiedCipherText} = tpke_pubkey:verify_ciphertext(PublicKey, CipherText),
+            DecShares = [tpke_privkey:decrypt_share(PrivateKey, VerifiedCipherText) || PrivateKey <- PrivateKeys],
+            ?assert(lists:all(fun(E) -> E end, [tpke_pubkey:verify_share(PublicKey, DecShare, VerifiedCipherText) || DecShare <- DecShares])),
+            ?assertEqual(Message, tpke_pubkey:combine_shares(PublicKey, VerifiedCipherText, dealer:random_n(T+1, DecShares)));
         false ->
             ok
     end,
