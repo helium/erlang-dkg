@@ -23,6 +23,8 @@
           received_commitment = false :: boolean(),
           commitments = #{} :: #{binary() => dkg_commitment:commitment()},
           callback = false :: boolean(),
+          sent_echoes = [] :: [integer()],
+          sent_readies = [] :: [integer()],
           signfun :: signfun(),
           verifyfun :: verifyfun()
          }).
@@ -103,7 +105,7 @@ handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false, call
             Msgs = lists:map(fun(Node) ->
                                      erlang_pbc:element_to_binary(dkg_polynomial:evaluate(A, Node))
                              end, dkg_util:allnodes(N)),
-            {store_commitment(Commitment, VSS#vss{received_commitment=true}), {send, [{callback, {echo, {Session, SerializedCommitmentMatrix0, Msgs}}}]}};
+            {store_commitment(Commitment, echo, VSS#vss{received_commitment=true}), {send, [{callback, {echo, {Session, SerializedCommitmentMatrix0, Msgs}}}]}};
         false ->
             {VSS, ok}
     end;
@@ -115,7 +117,7 @@ handle_msg(VSS=#vss{n=N, id=Id, session=Session, received_commitment=false}, Sen
             Msgs = lists:map(fun(Node) ->
                                      {unicast, Node, {echo, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(dkg_polynomial:evaluate(A, Node))}}}
                              end, dkg_util:allnodes(N)),
-            {store_commitment(Commitment, VSS#vss{received_commitment=true}), {send, Msgs}};
+            {store_commitment(Commitment, echo, VSS#vss{received_commitment=true}), {send, Msgs}};
         false ->
             {VSS, ok}
     end;
@@ -145,7 +147,7 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session, done=false, callback=CB}, 
                             Msgs = lists:map(fun(Node) ->
                                                      erlang_pbc:element_to_binary(lists:nth(Node+1, Subshares))
                                              end, dkg_util:allnodes(N)),
-                            {store_commitment(NewCommitment, VSS), {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs, ReadyProof}}}]}};
+                            {store_commitment(NewCommitment, ready, VSS), {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs, ReadyProof}}}]}};
                         true ->
                             %% not in callback mode
                             Subshares = dkg_commitment:interpolate(NewCommitment, echo, dkg_util:allnodes(N)),
@@ -153,7 +155,7 @@ handle_msg(VSS=#vss{id=Id, n=N, t=T, session=Session, done=false, callback=CB}, 
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, Subshares)), ReadyProof}}}
                                              end, dkg_util:allnodes(N)),
-                            {store_commitment(NewCommitment, VSS), {send, Msgs}};
+                            {store_commitment(NewCommitment, ready, VSS), {send, Msgs}};
                         false ->
                             {store_commitment(NewCommitment, VSS), ok}
                     end;
@@ -191,7 +193,7 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false, callback=CB}, Sender, {rea
                             Msgs = lists:map(fun(Node) ->
                                                      erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares))
                                              end, dkg_util:allnodes(N)),
-                            NewVSS = store_commitment(NewCommitment, VSS),
+                            NewVSS = store_commitment(NewCommitment, ready, VSS),
                             {NewVSS, {send, [{callback, {ready, {Session, SerializedCommitmentMatrix0, Msgs, MyReadyProof}}}]}};
                         true ->
                             %% not in callback mode
@@ -200,7 +202,7 @@ handle_msg(VSS=#vss{n=N, t=T, f=F, id=Id, done=false, callback=CB}, Sender, {rea
                             Msgs = lists:map(fun(Node) ->
                                                      {unicast, Node, {ready, {Session, SerializedCommitmentMatrix0, erlang_pbc:element_to_binary(lists:nth(Node+1, SubShares)), MyReadyProof}}}
                                              end, dkg_util:allnodes(N)),
-                            NewVSS = store_commitment(NewCommitment, VSS),
+                            NewVSS = store_commitment(NewCommitment, ready, VSS),
                             {NewVSS, {send, Msgs}};
                         false ->
                             case dkg_commitment:num_readies(NewCommitment) == (N-T-F) andalso
@@ -289,12 +291,14 @@ status(VSS) ->
     #{id => VSS#vss.id,
       session => VSS#vss.session,
       received_commitment => VSS#vss.received_commitment,
-      commitments => maps:map(fun(_, C) ->
+      commitments => maps:map(fun(Id, C) ->
                                       #{
                                        num_echoes => dkg_commitment:num_echoes(C),
                                        num_readies => dkg_commitment:num_readies(C),
-                                       echoes => maps:keys(dkg_commitment:echoes(C)),
-                                       readies => maps:keys(dkg_commitment:ready_proofs(C))
+                                       missing_echoes => lists:seq(1, VSS#vss.n) -- maps:keys(dkg_commitment:echoes(C)),
+                                       missing_readies => lists:seq(1, VSS#vss.n) -- maps:keys(dkg_commitment:ready_proofs(C)),
+                                       sent_echo => lists:member(Id, VSS#vss.sent_echoes),
+                                       sent_ready => lists:member(Id, VSS#vss.sent_readies)
                                       }
                               end, VSS#vss.commitments),
       done => VSS#vss.done
@@ -313,6 +317,14 @@ get_commitment(SerializedMatrix, VSS = #vss{n=N, t=T, u2=G2}) ->
 store_commitment(Commitment, VSS) ->
     Key = erlang:phash2(dkg_commitment:binary_matrix(Commitment)),
     VSS#vss{commitments=maps:put(Key, Commitment, VSS#vss.commitments)}.
+
+store_commitment(Commitment, ready, VSS) ->
+    Key = erlang:phash2(dkg_commitment:binary_matrix(Commitment)),
+    VSS#vss{commitments=maps:put(Key, Commitment, VSS#vss.commitments), sent_readies=[Key|VSS#vss.sent_readies]};
+store_commitment(Commitment, echo, VSS) ->
+    Key = erlang:phash2(dkg_commitment:binary_matrix(Commitment)),
+    VSS#vss{commitments=maps:put(Key, Commitment, VSS#vss.commitments), sent_echoes=[Key|VSS#vss.sent_echoes]}.
+
 
 construct_proof(#vss{id=Id, session={Dealer, Round}, signfun=SignFun}) ->
     %% Construct and sign a proof
