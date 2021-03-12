@@ -650,21 +650,45 @@ result_name(Key) when is_atom(Key) ->
 status(DKG) ->
     #{id => DKG#dkg.id,
       shares_map => maps:map(fun(_K, Shares) -> dkg_hybridvss:status(Shares) end, DKG#dkg.shares_map),
-      shares_results_from => maps:keys(DKG#dkg.shares_results),
+      missing_shares_results_from => lists:seq(1, DKG#dkg.n) -- maps:keys(DKG#dkg.shares_results),
       echoes_required => ceil(( DKG#dkg.n + DKG#dkg.t + 1 )/2),
-      echoes_detail => maps:map(fun(_K, Echoes) ->
-                                        lists:foldl(fun({Sender, {signed_echo, Shares}}, Acc) ->
-                                                            [#{sender => Sender,
-                                                               echo_counts => count_echo(DKG, Shares),
-                                                               echo => lists:sort([X || {X, _} <- get_echo(DKG, Shares)])} | Acc]
-                                                    end, [], Echoes)
-                                end, DKG#dkg.echo_counts),
-      readies_details => maps:map(fun(_K, Readies) ->
-                                          lists:foldl(fun({Sender, {signed_ready, Shares}}, Acc) ->
-                                                              [#{sender => Sender,
-                                                                 ready_counts => count_ready(DKG, Shares),
-                                                                 ready => lists:sort([X || {X, _} <- get_ready(DKG, Shares)])} | Acc]
-                                                      end, [], Readies)
+      echoes_details => maps:map(fun({_Leader, SelectedShares}, Echoes) ->
+                                          {_Sender, {signed_echo, Shares}} = hd(Echoes),
+                                          M = #{ echo_counts => count_echo(DKG, Shares),
+                                             shares =>
+                                             lists:foldl(fun(K, Acc) ->
+                                                                 maps:put(K, #{
+                                                                               acked => lists:member(K, DKG#dkg.shares_acked),
+                                                                               has_share => maps:is_key(K, DKG#dkg.shares_results)
+                                                                              }, Acc)
+                                                         end, #{}, SelectedShares)
+                                           },
+                                          case count_echo(DKG, Shares) >= ceil(( DKG#dkg.n + DKG#dkg.t + 1 )/2) of
+                                              true ->
+                                                  M;
+                                              false ->
+                                                  maps:put(missing_echoes, lists:seq(1, DKG#dkg.n) -- lists:sort([X || {X, _} <- get_echo(DKG, Shares)]), M)
+                                          end
+                                  end, DKG#dkg.echo_counts),
+      readies_details => maps:map(fun({_Leader, SelectedShares}, Readies) ->
+                                          {_Sender, {signed_ready, Shares}} = hd(Readies),
+                                          M = #{ ready_counts => count_ready(DKG, Shares),
+                                             missing_readies => lists:seq(1, DKG#dkg.n) -- lists:sort([X || {X, _} <- get_ready(DKG, Shares)]),
+                                             shares =>
+                                             lists:foldl(fun(K, Acc) ->
+                                                                 maps:put(K, #{
+                                                                               acked => lists:member(K, DKG#dkg.shares_acked),
+                                                                               has_share => maps:is_key(K, DKG#dkg.shares_results)
+                                                                              }, Acc)
+                                                         end, #{}, SelectedShares)
+                                           },
+                                          case count_ready(DKG, Shares) >= (DKG#dkg.t + 1 ) of
+                                              true ->
+                                                  M;
+                                              false ->
+                                                  maps:put(missing_readies, lists:seq(1, DKG#dkg.n) -- lists:sort([X || {X, _} <- get_ready(DKG, Shares)]), M)
+                                          end
+
                                   end, DKG#dkg.ready_counts),
       readies_required => (DKG#dkg.t + 1),
       leader_changing => DKG#dkg.leader_changing,
