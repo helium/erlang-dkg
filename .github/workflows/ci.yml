@@ -8,8 +8,8 @@ on:
 
 jobs:
   CI:
-    runs-on: ubuntu-18.04
-    container: heliumsystems/builder-erlang:2
+    runs-on: ubuntu-latest
+    # container: heliumsystems/builder-erlang:2
 
     steps:
       - name: Checkout
@@ -39,17 +39,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dialyzer-
 
-      - name: Build
-        run: rebar3 compile
+      - name: Install stable choolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            override: true
 
-      - name: Run tests
-        run: rebar3 as test do eunit,ct,cover
+      - name: Build
+        run: make
 
       - name: Run Dialyzer
-        run: rebar3 do dialyzer #, xref
+        run: make typecheck
+
+      - name: Run tests
+        run: make test
 
       - name: Generate coverage report
-        run: rebar3 covertool generate
+        run: make cover
 
       - name: Upload coverage report
         if: ${{ !env.ACT }}

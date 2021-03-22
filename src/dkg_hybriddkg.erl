@@ -1,11 +1,13 @@
 -module(dkg_hybriddkg).
 
--export([init/8,
+-export([init/6,
          input/2, % for testing
          start/1,
          serialize/1,
+         deserialize/3,
          deserialize/4,
-         status/1
+         status/1,
+         default_commitment_cache_fun/1
         ]).
 
 -export([handle_msg/3]).
@@ -15,8 +17,6 @@
           n :: pos_integer(),
           f :: pos_integer(),
           t :: pos_integer(),
-          u :: erlang_pbc:element(),
-          u2 :: erlang_pbc:element(),
           shares_map = #{} :: shares_map(),
           shares_results = #{} :: shares_results(),
           shares_seen = [] :: node_set(),
@@ -30,7 +30,8 @@
           leader_changing = false :: boolean(),
           leader_vote_counts = #{} :: leader_vote_counts(),
           await_vss = false :: boolean(),
-          elections_allowed = false :: boolean()
+          elections_allowed = false :: boolean(),
+          commitment_cache_fun :: fun()
          }).
 
 -type node_set() :: [pos_integer()].
@@ -47,8 +48,7 @@
 -type leader_vote_counts() :: #{Leader :: pos_integer() => [{Sender :: pos_integer(), signed_leader_change()}]}.
 -type shares_map() :: #{pos_integer() => dkg_hybridvss:vss()}.
 -type serialized_shares_map() :: #{pos_integer() => #{atom() => binary() | map()}}.
--type shares_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: erlang_pbc:element()}}.
--type serialized_shares_results() :: #{pos_integer() => {C :: dkg_commitment:serialized_commitment(), Si :: binary()}}.
+-type shares_results() :: #{pos_integer() => {C :: dkg_commitment:commitment(), Si :: tc_fr:fr()}}.
 -type dkg() :: #dkg{}.
 
 -export_type([dkg/0]).
@@ -73,13 +73,10 @@
 %%      for all d ∈ [1, n] do
 %%          initialize extended-HybridVSS Sh protocol (Pd, τ )
 -spec init(Id :: pos_integer(), N :: pos_integer(), F :: pos_integer(), T :: non_neg_integer(),
-           G1 :: erlang_pbc:element(), G2 :: erlang_pbc:element(),
            Round :: binary(), Options :: [{atom(), term()} | atom]) ->
     #dkg{}.
-init(Id, N, F, T, G1, G2, Round, Options) ->
+init(Id, N, F, T, Round, Options) ->
     true = N >= (3*T + 2*F + 1),
-    erlang_pbc:element_pp_init(G1),
-    erlang_pbc:element_pp_init(G2),
     Callback = proplists:get_value(callback, Options, false),
     %% XXX Don't allow elections by default. We don't have signed proofs they should
     %% occur so it's not safe to enable this in a non development context.
@@ -87,8 +84,9 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
     %% these will cause an exception if not present in the options list
     {signfun, SignFun} = lists:keyfind(signfun, 1, Options),
     {verifyfun, VerifyFun} = lists:keyfind(verifyfun, 1, Options),
+    CCacheFun = proplists:get_value(commitment_cache_fun, Options, fun default_commitment_cache_fun/1),
     Shares = lists:foldl(fun(E, Map) ->
-                                 Share = dkg_hybridvss:init(Id, N, F, T, G1, G2, {E, Round}, Callback, SignFun, VerifyFun),
+                                 Share = dkg_hybridvss:init(Id, N, F, T, {E, Round}, Callback, SignFun, VerifyFun, CCacheFun),
                                  Map#{E => Share}
                          end, #{}, dkg_util:allnodes(N)),
 
@@ -96,12 +94,11 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
          n = N,
          f = F,
          t = T,
-         u = G1,
-         u2 = G2,
          leader = 1,
          leader_cap = leader_cap(1, N),
          shares_map = Shares,
-         elections_allowed = Elections
+         elections_allowed = Elections,
+         commitment_cache_fun=CCacheFun
         }.
 
 %% the dgk starts to go on its own, this is here for the sake of
@@ -109,9 +106,9 @@ init(Id, N, F, T, G1, G2, Round, Options) ->
 input(State, _) ->
     start(State).
 
-start(DKG = #dkg{id=Id, u=G1}) ->
+start(DKG = #dkg{id=Id}) ->
     #{Id := MyShares} = SharesMap = DKG#dkg.shares_map,
-    Secret = erlang_pbc:element_random(erlang_pbc:element_new('Zr', G1)),
+    Secret = rand:uniform(trunc(math:pow(2, 64))),
     {NewShares, {send, ToSend}} = dkg_hybridvss:input(MyShares, Secret),
     {DKG#dkg{shares_map = SharesMap#{Id => NewShares}},
      {send, dkg_util:wrap({vss, Id}, ToSend)}}.
@@ -129,13 +126,13 @@ handle_msg(DKG=#dkg{await_vss = true}, Sender, {{vss, SharesId}, SharesMsg}) ->
                      {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
                 {NewShares, {result, {_Session, Commitment, Si}}} ->
                     NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
-                                     shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                                     shares_results = maps:put(SharesId, {dkg_commitment:serialize(Commitment), tc_fr:serialize(Si)}, DKG#dkg.shares_results),
                                      shares_seen = [SharesId | DKG#dkg.shares_seen]
                                     },
                     case output_ready(NewDKG, NewDKG#dkg.shares_acked) of
                         true ->
-                            {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, NewDKG#dkg.shares_acked),
-                            {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                            KeyShare = output(NewDKG, NewDKG#dkg.shares_acked),
+                            {NewDKG, {result, KeyShare}};
                         false ->
                             {NewDKG, ok}
                     end
@@ -163,7 +160,7 @@ handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
                     %%               delay ← delay(T); start timer(delay)
 
                     NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
-                                     shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                                     shares_results = maps:put(SharesId, {dkg_commitment:serialize(Commitment), tc_fr:serialize(Si)}, DKG#dkg.shares_results),
                                      shares_seen = [SharesId | DKG#dkg.shares_seen]
                                     },
                     case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
@@ -258,8 +255,8 @@ handle_msg(DKG = #dkg{id=_Id, n=N, t=T, f=F}, Sender, {signed_ready, Shares}=Rea
                             %% TODO stop timer
                             case output_ready(NewDKG, Shares) of
                                 true ->
-                                    {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, Shares),
-                                    {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                                    KeyShare = output(NewDKG, Shares),
+                                    {NewDKG, {result, KeyShare}};
                                 false ->
                                     {NewDKG#dkg{await_vss = true}, ok}
                             end;
@@ -396,34 +393,23 @@ output_ready(#dkg{shares_results = R0}, Shares) ->
     maps:size(R) == length(Shares).
 
 output(DKG, Shares) ->
-    OutputCommitment = output_commitment(DKG, Shares),
-    PublicKeyShares = public_key_shares(DKG, OutputCommitment),
-    VerificationKey = verification_key(OutputCommitment),
+    PublicKeySet = output_public_key_set(DKG, Shares),
     Shard = shard(DKG, Shares),
-    {Shard, VerificationKey, PublicKeyShares}.
+    tc_key_share:new(DKG#dkg.id - 1, PublicKeySet, Shard).
 
--spec output_commitment(#dkg{}, node_set()) -> dkg_commitment:commitment().
-output_commitment(_DKG=#dkg{shares_results=R0, u2=U2, t=T, n=N}, Shares) ->
-    R = maps:with(Shares, R0),
-    maps:fold(fun(_K, {Commitment, _}, Acc) ->
-                      dkg_commitment:mul(Commitment, Acc)
-              end, dkg_commitment:new(lists:seq(1, N), U2, T), R).
+-spec output_public_key_set(#dkg{}, node_set()) -> tc_public_key_set:pk_set().
+output_public_key_set(DKG=#dkg{shares_results=R0}, Shares) ->
+    {[Head|Commitments], _Shares} = lists:unzip(maps:values(maps:with(Shares, R0))),
+    lists:foldl(fun(Commitment, Acc) ->
+                        tc_public_key_set:combine(Acc, dkg_commitment:public_key_set(dkg_commitment:deserialize(Commitment, DKG#dkg.commitment_cache_fun)))
+              end, dkg_commitment:public_key_set(dkg_commitment:deserialize(Head, DKG#dkg.commitment_cache_fun)), Commitments).
 
--spec public_key_shares(#dkg{}, dkg_commitment:commitment()) -> [erlang_pbc:element()].
-public_key_shares(_DKG=#dkg{n=N}, OutputCommitment) ->
-    [dkg_commitment:public_key_share(OutputCommitment, NodeID) || NodeID <- dkg_util:allnodes(N)].
-
--spec verification_key(dkg_commitment:commitment()) -> erlang_pbc:element().
-verification_key(OutputCommitment) ->
-    dkg_commitmentmatrix:lookup([1, 1], dkg_commitment:matrix(OutputCommitment)).
-
--spec shard(#dkg{}, node_set()) -> erlang_pbc:element().
-shard(_DKG=#dkg{shares_results=R0, u=U}, Shares) ->
-    R = maps:with(Shares, R0),
-    Zero = erlang_pbc:element_set(erlang_pbc:element_new('Zr', U), 0),
-    maps:fold(fun(_K, {_, Si}, Acc) ->
-                        erlang_pbc:element_add(Acc, Si)
-              end, Zero, R).
+-spec shard(#dkg{}, node_set()) -> tc_secret_key_share:sk_share().
+shard(_DKG=#dkg{shares_results=R0}, Shares) ->
+    {_Commitments, [Head|Keys]} = lists:unzip(maps:values(maps:with(Shares, R0))),
+    lists:foldl(fun(Si, Acc) ->
+                        tc_secret_key_share:combine(Acc, tc_secret_key_share:from_fr(tc_fr:deserialize(Si)))
+              end, tc_secret_key_share:from_fr(tc_fr:deserialize(Head)), Keys).
 
 -spec leader_cap(pos_integer(), pos_integer()) -> pos_integer().
 leader_cap(L, N) ->
@@ -521,8 +507,6 @@ serialize(#dkg{id = Id,
                n = N,
                f = F,
                t = T,
-               u = U,
-               u2 = U2,
                shares_map = SharesMap,
                shares_results = SharesResults,
                shares_acked = SharesAcked,
@@ -536,15 +520,13 @@ serialize(#dkg{id = Id,
                leader_cap = LeaderCap,
                leader_vote_counts = LeaderVoteCounts,
                await_vss = AwaitVSS}) ->
-    PreSer = #{u => erlang_pbc:element_to_binary(U),
-               u2 => erlang_pbc:element_to_binary(U2),
-               shares_map => serialize_shares_map(SharesMap),
-               shares_results => serialize_shares_results(SharesResults)},
+    PreSer = #{shares_map => serialize_shares_map(SharesMap)},
     M0 = #{id => Id,
            n => N,
            f => F,
            t => T,
            shares_seen => SharesSeen,
+           shares_results => SharesResults,
            shares_acked => SharesAcked,
            vss_ready_proofs => ReadyProofs,
            echo_proofs => Echo_Proofs,
@@ -558,11 +540,13 @@ serialize(#dkg{id = Id,
     M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
     maps:merge(PreSer, M).
 
--spec deserialize(#{}, erlang_pbc:element(), fun(), fun()) -> dkg().
-deserialize(Map0, Element, SignFun, VerifyFun) when is_map(Map0) ->
-    Map = maps:map(fun(K, V) when K == u; K == u2;
-                                  K == shares_map;
-                                  K == shares_results ->
+-spec deserialize(#{}, fun(), fun()) -> dkg().
+deserialize(Map0, SignFun, VerifyFun) when is_map(Map0) ->
+    deserialize(Map0, SignFun, VerifyFun, fun default_commitment_cache_fun/1).
+
+-spec deserialize(#{}, fun(), fun(), fun()) -> dkg().
+deserialize(Map0, SignFun, VerifyFun, CCacheFun) when is_map(Map0) ->
+    Map = maps:map(fun(K, V) when K == shares_map ->
                            V;
                       (_K, B) ->
                            binary_to_term(B)
@@ -571,10 +555,8 @@ deserialize(Map0, Element, SignFun, VerifyFun) when is_map(Map0) ->
           n := N,
           f := F,
           t := T,
-          u := SerializedU,
-          u2 := SerializedU2,
           shares_map := SerializedSharesMap,
-          shares_results := SerializedSharesResults,
+          shares_results := SharesResults,
           shares_acked := SharesAcked,
           shares_seen := SharesSeen,
           vss_ready_proofs := ReadyProofs,
@@ -592,10 +574,8 @@ deserialize(Map0, Element, SignFun, VerifyFun) when is_map(Map0) ->
          n = N,
          f = F,
          t = T,
-         u = erlang_pbc:binary_to_element(Element, SerializedU),
-         u2 = erlang_pbc:binary_to_element(Element, SerializedU2),
-         shares_map = deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun),
-         shares_results = deserialize_shares_results(SerializedSharesResults, Element),
+         shares_map = deserialize_shares_map(SerializedSharesMap, SignFun, VerifyFun, CCacheFun),
+         shares_results = SharesResults,
          shares_acked = SharesAcked,
          shares_seen = SharesSeen,
          vss_ready_proofs = ReadyProofs,
@@ -606,7 +586,8 @@ deserialize(Map0, Element, SignFun, VerifyFun) when is_map(Map0) ->
          leader = Leader,
          leader_cap = LeaderCap,
          leader_vote_counts = LeaderVoteCounts,
-         await_vss = AwaitVSS}.
+         await_vss = AwaitVSS,
+         commitment_cache_fun=CCacheFun}.
 
 -spec serialize_shares_map(shares_map()) -> serialized_shares_map().
 serialize_shares_map(SharesMap) ->
@@ -615,11 +596,11 @@ serialize_shares_map(SharesMap) ->
                       maps:put(Name, dkg_hybridvss:serialize(Shares), Acc)
               end, #{}, SharesMap).
 
--spec deserialize_shares_map(serialized_shares_map(), erlang_pbc:element(), fun(), fun()) -> shares_map().
-deserialize_shares_map(SerializedSharesMap, Element, SignFun, VerifyFun) ->
+-spec deserialize_shares_map(serialized_shares_map(), fun(), fun(), fun()) -> shares_map().
+deserialize_shares_map(SerializedSharesMap, SignFun, VerifyFun, CCacheFun) ->
     maps:fold(fun(K, Shares, Acc) ->
                       Name = shares_name(K),
-                      maps:put(Name, dkg_hybridvss:deserialize(Shares, Element, SignFun, VerifyFun), Acc)
+                      maps:put(Name, dkg_hybridvss:deserialize(Shares, SignFun, VerifyFun, CCacheFun), Acc)
               end, #{}, SerializedSharesMap).
 
 shares_name(N) when is_integer(N) ->
@@ -627,33 +608,6 @@ shares_name(N) when is_integer(N) ->
 shares_name(Key) when is_atom(Key) ->
     L = atom_to_list(Key),
     "share_" ++ Int = L,
-    list_to_integer(Int).
-
--spec serialize_shares_results(shares_results()) -> serialized_shares_results().
-serialize_shares_results(SharesResults) ->
-    maps:fold(fun(K, {C, Si}, Acc) ->
-                      Name = result_name(K),
-                      Ser = term_to_binary({dkg_commitment:serialize(C),
-                                            erlang_pbc:element_to_binary(Si)},
-                                           [compressed]),
-                      maps:put(Name, Ser, Acc)
-              end, #{}, SharesResults).
-
--spec deserialize_shares_results(serialized_shares_results(), erlang_pbc:element()) ->
-                                        shares_results().
-deserialize_shares_results(SerializedSharesResults, U) ->
-    maps:fold(fun(K, Bin, Acc) ->
-                      Name = result_name(K),
-                      {C, Si} = binary_to_term(Bin),
-                      maps:put(Name, {dkg_commitment:deserialize(C, U),
-                                      erlang_pbc:binary_to_element(U, Si)}, Acc)
-              end, #{}, SerializedSharesResults).
-
-result_name(N) when is_integer(N) ->
-    list_to_atom("result_" ++ integer_to_list(N));
-result_name(Key) when is_atom(Key) ->
-    L = atom_to_list(Key),
-    "result_" ++ Int = L,
     list_to_integer(Int).
 
 is_chosen_vss(_, #dkg{elections_allowed=true}) ->
@@ -717,3 +671,6 @@ status(DKG) ->
       leader_changing => DKG#dkg.leader_changing,
       leader => DKG#dkg.leader,
       leader_cap => DKG#dkg.leader_cap}.
+
+default_commitment_cache_fun({_Ser, _DeSer}) -> ok;
+default_commitment_cache_fun(Ser) -> tc_bicommitment:deserialize(Ser).

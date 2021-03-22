@@ -1,6 +1,6 @@
 -module(dkg_test_utils).
 
--export([do_send_outer/4, random_n/2, enumerate/1, generate/1]).
+-export([do_send_outer/4, random_n/2, enumerate/1]).
 
 do_send_outer(Mod, [], States, Acc) ->
     case get_timers() of
@@ -70,12 +70,3 @@ shuffle(List) ->
 
 enumerate(List) ->
     lists:zip(lists:seq(1, length(List)), List).
-
-generate(Curve) ->
-    Group = erlang_pbc:group_new(Curve),
-    G1 = erlang_pbc:element_from_hash(erlang_pbc:element_new('G1', Group), crypto:strong_rand_bytes(32)),
-    G2 = case erlang_pbc:pairing_is_symmetric(Group) of
-             true -> G1;
-             false -> erlang_pbc:element_from_hash(erlang_pbc:element_new('G2', Group), crypto:strong_rand_bytes(32))
-         end,
-    {G1, G2}.

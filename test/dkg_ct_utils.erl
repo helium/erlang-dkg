@@ -7,7 +7,8 @@
          start_node/3,
          partition_cluster/2,
          heal_cluster/2,
-         connect/1
+         connect/1,
+         random_n/2
         ]).
 
 pmap(F, L) ->
@@ -115,3 +116,9 @@ attempt_connect(Node) ->
         true ->
             {ok, connected}
     end.
+
+random_n(N, List) ->
+    lists:sublist(shuffle(List), N).
+
+shuffle(List) ->
+    [X || {_,X} <- lists:sort([{rand:uniform(), N} || N <- List])].

@@ -60,8 +60,7 @@ symmetric_test(Config) ->
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
     DataDir = proplists:get_value(data_dir, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, 'SS512', G1, G2, Nodes, DataDir),
+    run(N, F, T, Nodes, DataDir),
     ok.
 
 asymmetric_test(Config) ->
@@ -70,12 +69,11 @@ asymmetric_test(Config) ->
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
     DataDir = proplists:get_value(data_dir, Config),
-    {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, 'MNT224', G1, G2, Nodes, DataDir),
+    run(N, F, T, Nodes, DataDir),
     ok.
 
 
-run(N, F, T, Curve, G1, G2, Nodes, DataDir) ->
+run(N, F, T, Nodes, DataDir) ->
     %% load dkg_relcast_worker on each node
     {Mod, Bin, _} = code:get_object_code(dkg_relcast_worker),
     _ = dkg_ct_utils:pmap(fun(Node) ->
@@ -90,9 +88,6 @@ run(N, F, T, Curve, G1, G2, Nodes, DataDir) ->
                                  {n, N},
                                  {f, F},
                                  {t, T},
-                                 {curve, Curve},
-                                 {g1, erlang_pbc:element_to_binary(G1)},
-                                 {g2, erlang_pbc:element_to_binary(G2)},
                                  {data_dir, DataDir},
                                  {round, <<0>>}]])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
     ok = global:sync(),

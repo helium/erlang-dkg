@@ -5,7 +5,7 @@
   {applications,
    [kernel,
     stdlib,
-    erlang_pbc
+    erlang_tc
    ]},
   {env,[]},
   {modules, []},
