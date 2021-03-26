@@ -117,65 +117,75 @@ start(DKG = #dkg{id=Id, u=G1}) ->
      {send, dkg_util:wrap({vss, Id}, ToSend)}}.
 
 handle_msg(DKG=#dkg{await_vss = true}, Sender, {{vss, SharesId}, SharesMsg}) ->
-    case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
-        {_Shares, ignore} ->
-            {DKG, ignore};
-        {NewShares, ok} ->
-            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
-        {NewShares, {send, ToSend}} ->
-            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)},
-             {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
-        {NewShares, {result, {_Session, Commitment, Si}}} ->
-            NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
-                             shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
-                             shares_seen = [SharesId | DKG#dkg.shares_seen]
-                            },
-            case output_ready(NewDKG, NewDKG#dkg.shares_acked) of
-                true ->
-                    {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, NewDKG#dkg.shares_acked),
-                    {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
-                false ->
-                    {NewDKG, ok}
-            end
+    case is_chosen_vss(SharesId, DKG) of
+        true ->
+            case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
+                {_Shares, ignore} ->
+                    {DKG, ignore};
+                {NewShares, ok} ->
+                    {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
+                {NewShares, {send, ToSend}} ->
+                    {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)},
+                     {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
+                {NewShares, {result, {_Session, Commitment, Si}}} ->
+                    NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
+                                     shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                                     shares_seen = [SharesId | DKG#dkg.shares_seen]
+                                    },
+                    case output_ready(NewDKG, NewDKG#dkg.shares_acked) of
+                        true ->
+                            {Shard, VerificationKey, PublicKeyShares} = output(NewDKG, NewDKG#dkg.shares_acked),
+                            {NewDKG, {result, {Shard, VerificationKey, PublicKeyShares}}};
+                        false ->
+                            {NewDKG, ok}
+                    end
+            end;
+        false ->
+            {DKG, ignore}
     end;
 handle_msg(DKG=#dkg{leader = Leader}, Sender, {{vss, SharesId}, SharesMsg}) ->
-    case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
-        {_Shares, ignore} ->
-            {DKG, ignore};
-        {NewShares, ok} ->
-            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
-        {NewShares, {send, ToSend}} ->
-            {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
-        {NewShares, {result, {_Session, Commitment, Si}}} ->
-            %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
-            %%      Qhat ← {Pd}; Rhat ← {Rd}
-            %%      if |Qhat| = t + 1 and Qbar = ∅ then
-            %%           if Pi = L then
-            %%               send the message (L, τ, send, Qhat, Rhat) to each Pj
-            %%            else
-            %%               delay ← delay(T); start timer(delay)
+    case is_chosen_vss(SharesId, DKG) of
+        true ->
+            case dkg_hybridvss:handle_msg(maps:get(SharesId, DKG#dkg.shares_map), Sender, SharesMsg) of
+                {_Shares, ignore} ->
+                    {DKG, ignore};
+                {NewShares, ok} ->
+                    {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, ok};
+                {NewShares, {send, ToSend}} ->
+                    {DKG#dkg{shares_map=maps:put(SharesId, NewShares, DKG#dkg.shares_map)}, {send, dkg_util:wrap({vss, SharesId}, ToSend)}};
+                {NewShares, {result, {_Session, Commitment, Si}}} ->
+                    %% upon (Pd, τ, out, shared, Cd , si,d , Rd ) (first time):
+                    %%      Qhat ← {Pd}; Rhat ← {Rd}
+                    %%      if |Qhat| = t + 1 and Qbar = ∅ then
+                    %%           if Pi = L then
+                    %%               send the message (L, τ, send, Qhat, Rhat) to each Pj
+                    %%            else
+                    %%               delay ← delay(T); start timer(delay)
 
-            NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
-                             shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
-                             shares_seen = [SharesId | DKG#dkg.shares_seen]
-                            },
-            case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
-                true ->
-                    case NewDKG#dkg.id == Leader of
+                    NewDKG = DKG#dkg{shares_map = maps:put(SharesId, NewShares, DKG#dkg.shares_map),
+                                     shares_results = maps:put(SharesId, {Commitment, Si}, DKG#dkg.shares_results),
+                                     shares_seen = [SharesId | DKG#dkg.shares_seen]
+                                    },
+                    case length(NewDKG#dkg.shares_seen) == NewDKG#dkg.t + 1 andalso length(NewDKG#dkg.shares_acked) == 0 of
                         true ->
-                            {NewDKG, {send, [{multicast, {send, {vss_ready_proofs,
-                                                                 [ {SId, dkg_commitment:ready_proofs(C)} || {SId, {C, _}} <- maps:to_list(NewDKG#dkg.shares_results)]
-                                                                }
-                                                         }
-                                             }
-                                            ]
-                                     }};
+                            case NewDKG#dkg.id == Leader of
+                                true ->
+                                    {NewDKG, {send, [{multicast, {send, {vss_ready_proofs,
+                                                                         [ {SId, dkg_commitment:ready_proofs(C)} || {SId, {C, _}} <- maps:to_list(NewDKG#dkg.shares_results)]
+                                                                        }
+                                                                 }
+                                                     }
+                                                    ]
+                                             }};
+                                false ->
+                                    {NewDKG, start_timer}
+                            end;
                         false ->
-                            {NewDKG, start_timer}
-                    end;
-                false ->
-                    {NewDKG, ok}
-            end
+                            {NewDKG, ok}
+                    end
+            end;
+        false ->
+            {DKG, ignore}
     end;
 
 %% upon a message (L, τ, send, Q, R/M) from L (first time):
@@ -645,6 +655,19 @@ result_name(Key) when is_atom(Key) ->
     L = atom_to_list(Key),
     "result_" ++ Int = L,
     list_to_integer(Int).
+
+is_chosen_vss(_, #dkg{elections_allowed=true}) ->
+    %% never optimize these VSSes away if we do elections
+    true;
+is_chosen_vss(VSSID, DKG) ->
+    case maps:size(DKG#dkg.echo_counts) + maps:size(DKG#dkg.ready_counts) of
+        0 ->
+            %% no echoes/readies yet, so assume we need it
+            true;
+        _ ->
+            %% check if any echo or ready mentions this VSS ID
+            lists:any(fun({_Leader, SelectedShares}) -> lists:member(VSSID, SelectedShares) end, maps:keys(DKG#dkg.echo_counts) ++ maps:keys(DKG#dkg.ready_counts))
+    end.
 
 -spec status(dkg()) -> map().
 status(DKG) ->
