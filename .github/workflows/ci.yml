@@ -43,7 +43,6 @@ jobs:
         run: rebar3 compile
 
       - name: Run tests
-        env:
         run: rebar3 as test do eunit,ct,cover
 
       - name: Run Dialyzer

@@ -1,6 +1,7 @@
 erlang-dkg
 =====
-[![Build Status](https://badge.buildkite.com/6933d2231530c47800b727a796af13ac90faabcffbe12af487.svg?branch=master)](https://buildkite.com/helium/erlang-dkg)
+
+[![CI](https://github.com/helium/erlang-dkg/actions/workflows/ci.yml/badge.svg)](https://github.com/helium/erlang-dkg/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/helium/erlang-dkg/branch/master/graph/badge.svg)](https://codecov.io/gh/helium/erlang-dkg)
 
 An implementation of the protocol described in "Distributed Key
