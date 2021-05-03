@@ -1,6 +1,6 @@
 -module(dkg_util).
 
--export([allnodes/1, wrap/2]).
+-export([allnodes/1, wrap/2, commitment_cache_fun/0]).
 
 allnodes(N) -> lists:seq(1, N).
 
@@ -15,3 +15,18 @@ wrap(Id, [{unicast, Dest, Msg}|T]) ->
 wrap(Id, [{callback, Msg}|T]) ->
     [{callback, {Id, Msg}}|wrap(Id, T)].
 
+commitment_cache_fun() ->
+    T = ets:new(t, []),
+    fun Self({Ser, DeSer0}) ->
+            ets:insert(T, {erlang:phash2(Ser), DeSer0}),
+            ok;
+       Self(Ser) ->
+            case ets:lookup(T, erlang:phash2(Ser)) of
+                [] ->
+                    DeSer = tc_bicommitment:deserialize(Ser),
+                    ok = Self({Ser, DeSer}),
+                    DeSer;
+                [{_, Res}] ->
+                    Res
+            end
+    end.

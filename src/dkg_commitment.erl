@@ -1,10 +1,11 @@
 -module(dkg_commitment).
 
--export([new/3,
+-export([new/4,
+         new/3,
          cmp/2,
-         mul/2,
          verify_poly/3,
          public_key_share/2,
+         public_key_set/1,
          verify_point/4,
          interpolate/3,
          add_echo/3,
@@ -15,25 +16,22 @@
          echoes/1,
          ready_proofs/1,
          matrix/1,
-         set_matrix/2,
-         binary_matrix/1,
+         hash/1,
          serialize/1,
          deserialize/2
         ]).
 
 -record(commitment, {
-          matrix :: dkg_commitmentmatrix:matrix(),
-          binary_matrix :: binary(),
-          generator :: erlang_pbc:element(),
+          commitment :: binary(),
           nodes = [] :: [pos_integer()],
           echoes = #{} :: echoes(),
           readies =#{} :: readies(),
-          proofs =#{} :: ready_proofs()
+          proofs =#{} :: ready_proofs(),
+          commitment_cache_fun :: fun((binary() | {binary(), tc_bicommitment:bicommitment()}) -> tc_bicommitment:bicommitment() | ok)
          }).
 
 -record(serialized_commitment, {
-          binary_matrix :: binary(),
-          generator :: binary(),
+          commitment :: binary(),
           nodes = [] :: [pos_integer()],
           echoes = #{} :: #{pos_integer() => binary()},
           readies = #{} :: #{pos_integer() => binary()},
@@ -41,67 +39,65 @@
          }).
 
 -type commitment() :: #commitment{}.
--type echoes() :: #{pos_integer() => erlang_pbc:element()}.
--type readies() :: #{pos_integer() => erlang_pbc:element()}.
+-type echoes() :: #{pos_integer() => tc_fr:fr()}.
+-type readies() :: #{pos_integer() => tc_fr:fr()}.
 -type serialized_commitment() :: #serialized_commitment{}.
 -type ready_proofs() :: #{pos_integer() => binary()}.
 
 -export_type([commitment/0, ready_proofs/0, serialized_commitment/0]).
 
--spec new([pos_integer(),...], erlang_pbc:element(), integer() | dkg_bipolynomial:bipolynomial()) -> commitment().
-new(NodeIDs, Generator, Degree) when is_integer(Degree) ->
-    Matrix = dkg_commitmentmatrix:new(Generator, Degree),
-    #commitment{nodes=NodeIDs, matrix=Matrix, binary_matrix=dkg_commitmentmatrix:serialize(Matrix), generator=Generator};
-new(NodeIDs, Generator, BiPoly) ->
-    Matrix = dkg_commitmentmatrix:new(Generator, BiPoly),
-    #commitment{nodes=NodeIDs, matrix=Matrix, binary_matrix=dkg_commitmentmatrix:serialize(Matrix),  generator=Generator}.
+-spec new([pos_integer(),...], tc_bicommitment:bicommitment(), binary(), fun()) -> commitment().
+new(NodeIDs, Commitment, SerializedCommitment, CacheFun) ->
+    %% seed the cache since we have both here
+    ok = CacheFun({SerializedCommitment, Commitment}),
+    #commitment{nodes=NodeIDs, commitment=SerializedCommitment, commitment_cache_fun=CacheFun}.
+
+-spec new([pos_integer(),...], tc_bicommitment:bicommitment(), fun()) -> commitment().
+new(NodeIDs, Commitment, CacheFun) ->
+    SerializedCommitment = tc_bicommitment:serialize(Commitment),
+    %% seed the cache since we have both here
+    ok = CacheFun({SerializedCommitment, Commitment}),
+    #commitment{nodes=NodeIDs, commitment=SerializedCommitment, commitment_cache_fun=CacheFun}.
 
 -spec cmp(commitment(), commitment()) -> boolean().
 cmp(CommitmentA, CommitmentB) ->
-    dkg_commitmentmatrix:cmp(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix).
+    CommitmentA#commitment.commitment == CommitmentB#commitment.commitment.
 
--spec mul(commitment(), commitment()) -> commitment().
-mul(CommitmentA, CommitmentB) ->
-    NewMatrix = dkg_commitmentmatrix:mul(CommitmentA#commitment.matrix, CommitmentB#commitment.matrix),
-    CommitmentA#commitment{matrix=NewMatrix}.
-
--spec verify_poly(commitment(), pos_integer(), dkg_polynomial:polynomial()) -> boolean().
+-spec verify_poly(commitment(), pos_integer(), tc_poly:poly()) -> boolean().
 verify_poly(Commitment, VerifierID, Poly) ->
-    dkg_commitmentmatrix:verify_poly(Commitment#commitment.generator, Commitment#commitment.matrix, VerifierID, Poly).
+    tc_bicommitment:verify_poly(gc(Commitment), Poly, VerifierID).
 
--spec public_key_share(commitment(), pos_integer()) -> erlang_pbc:element().
+-spec public_key_share(commitment(), pos_integer()) -> tc_public_key_share:pk_share().
 public_key_share(Commitment, NodeID) ->
-    dkg_commitmentmatrix:public_key_share(Commitment#commitment.generator, Commitment#commitment.matrix, NodeID).
+    tc_public_key_set:public_key_share(tc_public_key_set:from_commitment(tc_bicommitment:row(gc(Commitment), 0)), NodeID-1).
 
--spec verify_point(commitment(), pos_integer(), pos_integer(), erlang_pbc:element()) -> boolean().
+-spec public_key_set(commitment()) -> tc_public_key_set:pk_set().
+public_key_set(Commitment) ->
+    tc_public_key_set:from_commitment(tc_bicommitment:row(gc(Commitment), 0)).
+
+-spec verify_point(commitment(), pos_integer(), pos_integer(), binary()) -> boolean().
 verify_point(Commitment, SenderID, VerifierID, Point) ->
-    dkg_commitmentmatrix:verify_point(Commitment#commitment.generator, Commitment#commitment.matrix, SenderID, VerifierID, Point).
+    case maps:get(SenderID, Commitment#commitment.echoes, undefined) == Point orelse
+         maps:get(SenderID, Commitment#commitment.readies, undefined) == Point of
+        true ->
+            true;
+        false ->
+            tc_bicommitment:validate_point(gc(Commitment), SenderID, VerifierID, tc_fr:deserialize(Point))
+    end.
 
--spec interpolate(commitment(), echo | ready, [pos_integer()]) -> [erlang_pbc:element()].
-interpolate(Commitment, EchoOrReady, ActiveNodeIDs) ->
+-spec interpolate(commitment(), pos_integer(), echo | ready) -> tc_poly:poly().
+interpolate(Commitment, T, EchoOrReady) ->
     Map = case EchoOrReady of
                echo -> Commitment#commitment.echoes;
                ready -> Commitment#commitment.readies
            end,
-    {Indices0, Elements} = lists:unzip(maps:to_list(Map)),
-    %% turn the node IDs into PBC elements
-    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), I) || I <- Indices0 ],
-    Shares = lists:foldl(fun(Index, Acc) ->
-                                 case maps:is_key(Index, Map) of
-                                     false ->
-                                         %% Node ${Index} has not sent us a share, interpolate it
-                                         Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', hd(Elements)), Index),
-                                         LagrangePoly = dkg_lagrange:coefficients(Indices, Alpha),
-                                         InterpolatedShare = dkg_lagrange:evaluate_zr(LagrangePoly, Elements),
-                                         [ InterpolatedShare | Acc];
-                                     true ->
-                                         %% Node ${Index} has sent us a share
-                                         [ maps:get(Index, Map) | Acc]
-                                 end
-                         end, [], [0 | ActiveNodeIDs]), %% note that we also evaluate at 0
-    lists:reverse(Shares).
+    Received = [
+                {tc_fr:into(Index), tc_fr:deserialize(Val)}
+                || {Index, Val} <- lists:sublist(maps:to_list(Map), T+1)
+               ],
+    tc_poly:interpolate_from_fr(Received).
 
--spec add_echo(commitment(), pos_integer(), erlang_pbc:element()) -> {true | false, commitment()}.
+-spec add_echo(commitment(), pos_integer(), tc_fr:fr()) -> {true | false, commitment()}.
 add_echo(Commitment = #commitment{nodes=Nodes, echoes=Echoes}, NodeID, Echo) when NodeID /= 0 ->
     case lists:member(NodeID, Nodes) of
         true ->
@@ -116,7 +112,7 @@ add_echo(Commitment = #commitment{nodes=Nodes, echoes=Echoes}, NodeID, Echo) whe
             {false, Commitment}
     end.
 
--spec add_ready(commitment(), pos_integer(), erlang_pbc:element()) -> {true | false, commitment()}.
+-spec add_ready(commitment(), pos_integer(), tc_fr:fr()) -> {true | false, commitment()}.
 add_ready(Commitment = #commitment{nodes=Nodes, readies=Readies}, NodeID, Ready) when NodeID /= 0 ->
     case lists:member(NodeID, Nodes) of
         true ->
@@ -160,44 +156,42 @@ echoes(#commitment{echoes=Echoes}) ->
 
 -spec ready_proofs(commitment()) -> ready_proofs().
 ready_proofs(#commitment{proofs=Proofs}) ->
+    Proofs;
+ready_proofs(#serialized_commitment{proofs=Proofs}) ->
     Proofs.
 
--spec matrix(commitment()) -> dkg_commitmentmatrix:matrix().
-matrix(#commitment{matrix=Matrix}) ->
-    Matrix.
+-spec matrix(commitment()) -> binary().
+matrix(#commitment{commitment=Commitment}) ->
+    Commitment.
 
--spec set_matrix(commitment(), dkg_commitmentmatrix:matrix()) -> commitment().
-set_matrix(C = #commitment{}, Matrix) ->
-    C#commitment{matrix=Matrix, binary_matrix=dkg_commitmentmatrix:serialize(Matrix)}.
-
-binary_matrix(#commitment{binary_matrix=B}) ->
-    B.
+hash(#commitment{commitment=Commitment}) ->
+    erlang:phash2(Commitment).
 
 -spec serialize(commitment()) -> serialized_commitment().
-serialize(#commitment{binary_matrix=BinMatrix,
-                      generator=Generator,
+serialize(#commitment{commitment=Commitment,
                       nodes=Nodes,
                       echoes=Echoes,
                       readies=Readies,
                       proofs=Proofs}) ->
-    #serialized_commitment{binary_matrix=BinMatrix,
-                           generator=erlang_pbc:element_to_binary(Generator),
+    #serialized_commitment{commitment=Commitment,
                            nodes=Nodes,
-                           echoes=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Echoes),
-                           readies=maps:map(fun(_K, V) -> erlang_pbc:element_to_binary(V) end, Readies),
+                           echoes=Echoes,
+                           readies=Readies,
                            proofs=Proofs}.
 
--spec deserialize(serialized_commitment(), erlang_pbc:element()) -> commitment().
-deserialize(#serialized_commitment{binary_matrix=SerializedMatrix,
-                                   generator=SerializedGenerator,
+-spec deserialize(serialized_commitment(), fun()) -> commitment().
+deserialize(#serialized_commitment{commitment=Commitment,
                                    nodes=Nodes,
                                    echoes=Echoes,
                                    readies=Readies,
-                                   proofs=Proofs}, U) ->
-    #commitment{matrix=dkg_commitmentmatrix:deserialize(SerializedMatrix, U),
-                binary_matrix=SerializedMatrix,
-                generator=erlang_pbc:binary_to_element(U, SerializedGenerator),
+                                   proofs=Proofs}, CCacheFun) ->
+    #commitment{commitment=Commitment,
+                commitment_cache_fun=CCacheFun,
                 nodes=Nodes,
                 proofs=Proofs,
-                echoes=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Echoes),
-                readies=maps:map(fun(_K, V) -> erlang_pbc:binary_to_element(U, V) end, Readies)}.
+                echoes=Echoes,
+                readies=Readies}.
+
+gc(#commitment{commitment=Commitment, commitment_cache_fun=Fun}) ->
+    Fun(Commitment).
+

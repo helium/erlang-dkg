@@ -15,10 +15,8 @@
 -record(state, {
           dkg :: dkg_hybriddkg:dkg() | dkg_hybriddkg:serialized_dkg(),
           round :: integer(),
-          curve :: 'SS512' | 'MNT224',
-          g1 :: erlang_pbc:element() | binary(),
-          g2 :: erlang_pbc:element() | binary(),
-          privkey :: undefined | tpke_privkey:privkey() | tpke_privkey:privkey_serialized(),
+          privkey :: undefined | tc_secret_key_share:sk_share() | binary(),
+          pubkey_set :: undefined | tc_public_key_set:pk_set() | binary(),
           n :: pos_integer(),
           t :: pos_integer(),
           id :: pos_integer()
@@ -29,31 +27,21 @@ init(DKGArgs) ->
     N = proplists:get_value(n, DKGArgs),
     F = proplists:get_value(f, DKGArgs),
     T = proplists:get_value(t, DKGArgs),
-    Curve = proplists:get_value(curve, DKGArgs),
-    G1 = proplists:get_value(g1, DKGArgs),
-    G2 = proplists:get_value(g2, DKGArgs),
     Round = proplists:get_value(round, DKGArgs),
-    {G1_Prime, G2_Prime} = case is_binary(G1) andalso is_binary(G2) of
-                   true ->
-                       Group = erlang_pbc:group_new(Curve),
-                       {erlang_pbc:binary_to_element(Group, G1), erlang_pbc:binary_to_element(Group, G2)};
-                   false ->
-                       {G1, G2}
-               end,
-    DKG = dkg_hybriddkg:init(ID, N, F, T, G1_Prime, G2_Prime, Round, [{callback, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]),
-    {ok, #state{round=Round, id=ID, n=N, t=T, dkg=DKG, curve=Curve, g1=G1_Prime, g2=G2_Prime}}.
+    DKG = dkg_hybriddkg:init(ID, N, F, T, Round, [{callback, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]),
+    {ok, #state{round=Round, id=ID, n=N, t=T, dkg=DKG}}.
 
 handle_command(start_round, State) ->
     {DKG, {send, ToSend}} = dkg_hybriddkg:start(State#state.dkg),
     {reply, ok, fixup_msgs(ToSend), State#state{dkg=DKG}};
 handle_command(is_done, State) ->
     {reply, State#state.privkey /= undefined, ignore};
-handle_command(get_pubkey, #state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:public_key(PrivKey), ignore};
-handle_command({sign_share, MessageToSign}, #state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:sign(PrivKey, MessageToSign), ignore};
-handle_command({dec_share, CipherText}, #state{privkey=PrivKey}) when PrivKey /= undefined ->
-    {reply, tpke_privkey:decrypt_share(PrivKey, CipherText), ignore};
+handle_command(get_pubkey, #state{pubkey_set=PubKeySet}) when PubKeySet /= undefined ->
+    {reply, PubKeySet, ignore};
+handle_command({sign_share, MessageToSign}, #state{privkey=PrivKey, id=ID}) when PrivKey /= undefined ->
+    {reply, {ID - 1, tc_secret_key_share:sign(PrivKey, MessageToSign)}, ignore};
+handle_command({dec_share, CipherText}, #state{privkey=PrivKey, id=ID}) when PrivKey /= undefined ->
+    {reply, {ID - 1, tc_secret_key_share:decrypt_share(PrivKey, CipherText)}, ignore};
 handle_command(status, #state{dkg=DKG}) ->
     {reply, dkg_hybriddkg:status(DKG), ignore};
 handle_command(Msg, _State) ->
@@ -65,17 +53,8 @@ handle_message(Msg, Actor, State) ->
         {_DKG, ignore} -> ignore;
         {DKG, ok} ->
             {State#state{dkg=DKG}, []};
-        {DKG, {result, {Shard, VerificationKey, VerificationKeys}}} ->
-            PubKey = tpke_pubkey:init(State#state.n,
-                                      State#state.t,
-                                      State#state.g1,
-                                      State#state.g2,
-                                      VerificationKey,
-                                      VerificationKeys,
-                                      State#state.curve),
-            PrivKey = tpke_privkey:init(PubKey, Shard, State#state.id - 1),
-
-            {State#state{dkg=DKG, privkey=PrivKey}, []};
+        {DKG, {result, KeyShare}} ->
+            {State#state{dkg=DKG, privkey=tc_key_share:secret_key_share(KeyShare), pubkey_set=tc_key_share:public_key_set(KeyShare)}, []};
         {DKG, {send, ToSend}} ->
             {State#state{dkg=DKG}, fixup_msgs(ToSend)};
         {DKG, start_timer} ->
@@ -95,57 +74,62 @@ callback_message(Actor, Message, _State) ->
 
 serialize(State) ->
     SerializedDKG = dkg_hybriddkg:serialize(State#state.dkg),
-    G1 = erlang_pbc:element_to_binary(State#state.g1),
-    G2 = erlang_pbc:element_to_binary(State#state.g2),
-    Map = #{dkg => SerializedDKG,
-            round => term_to_binary(State#state.round),
-            curve => term_to_binary(State#state.curve),
-            n => term_to_binary(State#state.n),
-            t => term_to_binary(State#state.t),
-            id => term_to_binary(State#state.id),
-            g1 => G1,
-            g2 => G2},
-    case State#state.privkey of
+    PrivKey = case State#state.privkey of
         undefined ->
-            Map;
+            undefined;
         Other ->
-            maps:put(privkey, term_to_binary(tpke_privkey:serialize(Other)), Map)
-    end.
+            tc_secret_key_share:serialize(Other)
+    end,
+
+    PubKeySet = case State#state.pubkey_set of
+        undefined ->
+            undefined;
+        Other2 ->
+            tc_public_key_set:serialize(Other2)
+    end,
+
+    #{dkg => SerializedDKG,
+      round => term_to_binary(State#state.round),
+      n => term_to_binary(State#state.n),
+      t => term_to_binary(State#state.t),
+      privkey => term_to_binary(PrivKey),
+      pubkey_set => term_to_binary(PubKeySet),
+      id => term_to_binary(State#state.id)}.
 
 deserialize(Map) ->
     #{round := Round0,
-      curve := Curve0,
       n := N0,
       t := T0,
       id := ID0,
-      g1 := G1_0,
-      g2 := G2_0,
       privkey := PrivKey0,
+      pubkey_set := PubKeySet0,
       dkg := DKG0} = Map,
-    Curve = binary_to_term(Curve0),
     Round = binary_to_term(Round0),
     N = binary_to_term(N0),
     T = binary_to_term(T0),
     ID = binary_to_term(ID0),
 
-    Group = erlang_pbc:group_new(Curve),
-    G1 = erlang_pbc:binary_to_element(Group, G1_0),
-    G2 = erlang_pbc:binary_to_element(Group, G2_0),
-    DKG = dkg_hybriddkg:deserialize(DKG0, G1, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
-    PrivKey = case PrivKey0 of
+    DKG = dkg_hybriddkg:deserialize(DKG0, fun(_) -> <<"lol">> end, fun(_, _, _) -> true end),
+    PrivKey = case binary_to_term(PrivKey0) of
         undefined ->
             undefined;
         Other ->
-            tpke_privkey:deserialize(binary_to_term(Other))
+            tc_secret_key_share:deserialize(Other)
     end,
+    PubKeySet = case binary_to_term(PubKeySet0) of
+        undefined ->
+            undefined;
+        Other2 ->
+            tc_public_key_set:deserialize(Other2)
+    end,
+
     #state{dkg=DKG,
            privkey=PrivKey,
+           pubkey_set=PubKeySet,
            n = N,
            t = T,
            id = ID,
-           curve = Curve,
-           round = Round,
-           g1=G1, g2=G2}.
+           round = Round}.
 
 restore(OldState, _NewState) ->
     {ok, OldState}.

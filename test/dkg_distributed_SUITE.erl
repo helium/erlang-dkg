@@ -11,11 +11,11 @@
          all/0
         ]).
 
--export([symmetric_test/1, asymmetric_test/1]).
+-export([symmetric_test/1]).
 
 %% common test callbacks
 
-all() -> [symmetric_test, asymmetric_test].
+all() -> [symmetric_test].
 
 init_per_suite(Config) ->
     os:cmd(os:find_executable("epmd")++" -daemon"),
@@ -58,21 +58,10 @@ symmetric_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, 'SS512', G1, G2, Nodes),
+    run(N, F, T, Nodes),
     ok.
 
-asymmetric_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    N = proplists:get_value(n, Config),
-    F = proplists:get_value(f, Config),
-    T = proplists:get_value(t, Config),
-    {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, 'MNT224', G1, G2, Nodes),
-    ok.
-
-
-run(N, F, T, Curve, G1, G2, Nodes) ->
+run(N, F, T, Nodes) ->
     %% load dkg_worker on each node
     {Mod, Bin, _} = code:get_object_code(dkg_worker),
     _ = dkg_ct_utils:pmap(fun(Node) ->
@@ -83,7 +72,7 @@ run(N, F, T, Curve, G1, G2, Nodes) ->
     Workers = [{Node, rpc:call(Node,
                                dkg_worker,
                                start_link,
-                               [I, N, F, T, Curve, erlang_pbc:element_to_binary(G1), erlang_pbc:element_to_binary(G2), <<0>>])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
+                               [I, N, F, T, <<0>>])} || {I, Node} <- dkg_test_utils:enumerate(Nodes)],
     ok = global:sync(),
 
     ct:pal("workers ~p", [Workers]),
@@ -102,4 +91,38 @@ run(N, F, T, Curve, G1, G2, Nodes) ->
 
     _ = [ ct:pal("~p is_done? :~p", [Node, dkg_worker:is_done(W)]) || {Node, {ok, W}} <- Workers],
 
+    true = check_status(Workers),
+
     [ unlink(W) || {_, {ok, W}} <- Workers ].
+
+%% helper functions
+
+check_status(Workers) ->
+    Statuses = [dkg_worker:dkg_status(W) || {_Node, {ok, W}} <- Workers],
+
+    Check1 = lists:all(fun(Status) ->
+                               5 == maps:get(echoes_required, Status) andalso
+                               3 == maps:get(readies_required, Status)
+                       end,
+                       Statuses),
+
+    CountShares = lists:foldl(fun(Status, Acc) ->
+                                      SharesMap = maps:get(shares_map, Status),
+
+                                      CountDone = maps:fold(fun(_ID, Result, Acc2) ->
+                                                                    case maps:get(done, Result, false) of
+                                                                        true -> Acc2 + 1;
+                                                                        false -> Acc2
+                                                                    end
+                                                            end, 0, SharesMap),
+
+                                      CountDone + Acc
+                              end,
+                              0,
+                              Statuses),
+
+    %% for each worker, we expect i - 1 shares worse case
+    MinimumExpectedShares = (length(Workers) - 1) * length(Workers),
+    Check2 = CountShares >= MinimumExpectedShares,
+
+    Check1 andalso Check2.

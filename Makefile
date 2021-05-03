@@ -9,10 +9,10 @@ clean:
 	$(REBAR) clean
 
 cover:
-	$(REBAR) cover
+	$(REBAR) covertool generate
 
 test: compile
-	$(REBAR) as test do ct
+	$(REBAR) as test do eunit,ct
 
 typecheck:
 	$(REBAR) dialyzer

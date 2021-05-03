@@ -8,9 +8,7 @@
 -export([all/0, init_per_testcase/2, end_per_testcase/2]).
 -export([
          symmetric_test/1,
-         asymmetric_test/1,
          leader_change_symmetric_test/1,
-         leader_change_asymmetric_test/1,
          split_key_test/1,
          sign_verify_test/1,
          sign_verify_fail_test/1
@@ -19,9 +17,7 @@
 all() ->
     [
      symmetric_test,
-     asymmetric_test,
      leader_change_symmetric_test,
-     leader_change_asymmetric_test,
      split_key_test,
      sign_verify_test,
      sign_verify_fail_test
@@ -45,17 +41,7 @@ symmetric_test(Config) ->
     T = proplists:get_value(t, Config),
     InitialLeader = proplists:get_value(init_leader, Config),
     Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader).
-
-asymmetric_test(Config) ->
-    N = proplists:get_value(n, Config),
-    F = proplists:get_value(f, Config),
-    T = proplists:get_value(t, Config),
-    InitialLeader = proplists:get_value(init_leader, Config),
-    Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader).
+    run(N, F, T, Module, InitialLeader).
 
 leader_change_symmetric_test(Config) ->
     N = proplists:get_value(n, Config),
@@ -63,17 +49,7 @@ leader_change_symmetric_test(Config) ->
     T = proplists:get_value(t, Config),
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
-
-leader_change_asymmetric_test(Config) ->
-    N = proplists:get_value(n, Config),
-    F = proplists:get_value(f, Config),
-    T = proplists:get_value(t, Config),
-    InitialLeader = 2,
-    Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('MNT224'),
-    run(N, F, T, Module, 'MNT224', G1, G2, InitialLeader, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
+    run(N, F, T, Module, InitialLeader, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
 
 sign_verify_test(Config) ->
     N = proplists:get_value(n, Config),
@@ -92,8 +68,7 @@ sign_verify_test(Config) ->
     SigFuns = [ fun(Msg) -> public_key:sign(Msg, sha256, PrivKey) end || {PrivKey, _} <- Keys ],
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}]).
+    run(N, F, T, Module, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}]).
 
 sign_verify_fail_test(Config) ->
     N = proplists:get_value(n, Config),
@@ -113,8 +88,7 @@ sign_verify_fail_test(Config) ->
     SigFuns = [ fun(Msg) -> public_key:sign(Msg, sha256, PrivKey) end || {PrivKey, _} <- Keys ],
     InitialLeader = 2,
     Module = proplists:get_value(module, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
-    ?assertException(error, {assertEqual, _}, run(N, F, T, Module, 'SS512', G1, G2, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}])).
+    ?assertException(error, {assertEqual, _}, run(N, F, T, Module, InitialLeader, [{elections, true}, {signfuns, SigFuns}, {verifyfun, VerifyFun}])).
 
 
 -record(sk_state,
@@ -128,9 +102,8 @@ split_key_test(Config) ->
     N = proplists:get_value(n, Config),
     F = proplists:get_value(f, Config),
     T = proplists:get_value(t, Config),
-    {G1, G2} = dkg_test_utils:generate('SS512'),
 
-    BaseConfig = [N, F, T, G1, G2, <<0>>, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]],
+    BaseConfig = [N, F, T, <<0>>, [{elections, true}, {signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]],
 
     Init =
         fun() ->
@@ -149,7 +122,7 @@ split_key_test(Config) ->
 
     run_fake(Init, fun sk_model/7, os:timestamp(), %% {1543,599707,659249}, % known failure case
              [{Node, ignored} || Node <- lists:seq(1, N)], % input
-             N, F, T, 'SS512', G1, G2).
+             T).
 
 %% this model alters the sequence of events to trigger the split keys
 %% condition (in the original code).  it does so by making sure that
@@ -187,10 +160,10 @@ sk_model(_Message, _From, _To, _NodeState, _NewState, _Actions, ModelState) ->
     {actions, [], ModelState}.
 
 
-run(N, F, T, Module, Curve, G1, G2, InitialLeader) ->
-    run(N, F, T, Module, Curve, G1, G2, InitialLeader, [{signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
+run(N, F, T, Module, InitialLeader) ->
+    run(N, F, T, Module, InitialLeader, [{signfun, fun(_) -> <<"lol">> end}, {verifyfun, fun(_, _, _) -> true end}]).
 
-run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
+run(N, F, T, Module, InitialLeader, Options) ->
     {StatesWithId, Replies} = lists:unzip(lists:map(fun(E) ->
                                                             %% check if we have a real, per node, sig fun
                                                             SigFun = case proplists:get_value(signfuns, Options) of
@@ -200,7 +173,7 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
                                                                          SigFuns when is_list(SigFuns) ->
                                                                              lists:nth(E, SigFuns)
                                                                      end,
-                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, G1, G2, <<0>>,
+                                                   {State, {send, Replies}} = Module:start(Module:init(E, N, F, T, <<0>>,
                                                                                                        lists:keystore(signfun, 1, Options, {signfun, SigFun}))),
                                                    {{E, State}, {E, {send, Replies}}}
                                            end, lists:seq(InitialLeader, N))),
@@ -209,56 +182,32 @@ run(N, F, T, Module, Curve, G1, G2, InitialLeader, Options) ->
     ?assertEqual(N-InitialLeader+1, length(sets:to_list(ConvergedResults))),
     ct:pal("Results ~p", [sets:to_list(ConvergedResults)]),
 
-    verify_results(ConvergedResults, N, F, T, G1, G2, Curve).
+    verify_results(ConvergedResults, T).
 
 
-run_fake(Init, Model, Seed, Input, N, F, T, Curve, G1, G2) ->
+run_fake(Init, Model, Seed, Input, T) ->
 
     {ok, Results} = fakecast:start_test(Init, Model, Seed, Input),
 
     ct:pal("results ~p", [Results]),
 
-    verify_results(Results, N, F, T, G1, G2, Curve).
+    verify_results(Results, T).
 
-verify_results(ConvergedResults, N, F, T, G1, G2, Curve) ->
-    %% XXX: this is the same as the pubkeyshare test, I'm sure there is more to it
-    SecretKeyShares = lists:keysort(1, [ {Node, SecretKey} || {result, {Node, {SecretKey, _VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
-    VerificationKeys = lists:keysort(1, [ {Node, VerificationKey} || {result, {Node, {_SecretKey, VerificationKey, _VerificationKeys}}} <- sets:to_list(ConvergedResults)]),
-    VerificationKeyss = lists:keysort(1, [ {Node, VerificationKeyz} || {result, {Node, {_SecretKey, _VerificationKey, VerificationKeyz}}} <- sets:to_list(ConvergedResults)]),
-    ct:pal("Secret key shares ~p", [[ erlang_pbc:element_to_string(S) || {_, S} <- SecretKeyShares]]),
-    ct:pal("Public key shares ~p", [[ {I, erlang_pbc:element_to_string(S)} || {I, S} <- VerificationKeys]]),
-    ct:pal("Public key shares ~p", [[ lists:map(fun erlang_pbc:element_to_string/1, S) || {_, S} <- VerificationKeyss]]),
-    PublicKeySharePoly = [Share || Share <- element(2, hd(VerificationKeyss))],
-    KnownSecret = dkg_polynomial:evaluate(PublicKeySharePoly, 0),
-    Indices = [ erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), I) || I <- lists:seq(1, N) ],
-    Alpha = erlang_pbc:element_set(erlang_pbc:element_new('Zr', G1), 0),
-    CalculatedSecret = dkg_lagrange:interpolate(PublicKeySharePoly, Indices, Alpha),
-    ?assert(erlang_pbc:element_cmp(KnownSecret, CalculatedSecret)),
+verify_results(ConvergedResults, T) ->
+    SecretKeyShares = [ KeyShare || {result, {_Node, KeyShare}} <- sets:to_list(ConvergedResults)],
 
-    %% attempt to construct some TPKE keys...
-    PrivateKeys = lists:map(fun({result, {Node, {SK, VK, VKs}}}) ->
-                                    PK = tpke_pubkey:init(N, F, G1, G2, VK, VKs, Curve),
-                                    tpke_privkey:init(PK, SK, Node-1)
-                            end, sets:to_list(ConvergedResults)),
-    PubKey = tpke_privkey:public_key(hd(PrivateKeys)),
-    Msg = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
-    MessageToSign = tpke_pubkey:hash_message(PubKey, Msg),
-    Signatures = [ tpke_privkey:sign(PrivKey, MessageToSign) || PrivKey <- PrivateKeys],
-    ct:pal("~p", [[tpke_pubkey:verify_signature_share(PubKey, Share, MessageToSign) || Share <- Signatures]]),
-    ?assert(lists:all(fun(X) -> X end, [tpke_pubkey:verify_signature_share(PubKey, Share, MessageToSign) || Share <- Signatures])),
-    {ok, Sig} = tpke_pubkey:combine_signature_shares(PubKey, dealer:random_n(T+1, Signatures), MessageToSign),
-    ?assert(tpke_pubkey:verify_signature(PubKey, Sig, MessageToSign)),
+    AKey = hd(SecretKeyShares),
+    MessageToSign = crypto:hash(sha256, crypto:strong_rand_bytes(12)),
+    Signatures = [ tc_key_share:sign_share(KeyShare, MessageToSign) || KeyShare <- SecretKeyShares],
+    ct:pal("~p", [[tc_key_share:verify_signature_share(AKey, Share, MessageToSign) || Share <- Signatures]]),
+    ?assert(lists:all(fun(X) -> X end, [tc_key_share:verify_signature_share(AKey, Share, MessageToSign) || Share <- Signatures])),
+    {ok, CombinedSignature} = tc_key_share:combine_signature_shares(AKey, Signatures),
+    ?assert(tc_key_share:verify(AKey, CombinedSignature, MessageToSign)),
 
-    case erlang_pbc:pairing_is_symmetric(G1) of
-        true ->
-            %% threshold decryption only works with symmetric curve
-            Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),
-            CipherText = tpke_pubkey:encrypt(PubKey, Message),
-            {ok, VerifiedCipherText} = tpke_pubkey:verify_ciphertext(PubKey, CipherText),
-            Shares = [ tpke_privkey:decrypt_share(SK, VerifiedCipherText) || SK <- PrivateKeys ],
-            ct:pal("Decrypted shares ~p", [Shares]),
-            ?assert(lists:all(fun(X) -> X end, [tpke_pubkey:verify_share(PubKey, Share, VerifiedCipherText) || Share <- Shares])),
-            ?assertEqual(Message, tpke_pubkey:combine_shares(PubKey, VerifiedCipherText, dealer:random_n(T+1, Shares)));
-        false ->
-            ok
-    end.
+    Message = crypto:hash(sha256, <<"my hovercraft is full of eels">>),
+    CipherText = tc_key_share:encrypt(AKey, Message),
+    true = tc_ciphertext:verify(CipherText),
+    DecShares = [tc_key_share:decrypt_share(KeyShare, CipherText) || KeyShare <- SecretKeyShares],
+    ?assert(lists:all(fun(E) -> E end, [tc_key_share:verify_decryption_share(AKey, DecShare, CipherText) || DecShare <- DecShares])),
+    ?assertEqual({ok, Message}, tc_key_share:combine_decryption_shares(AKey, [S || S <- dkg_ct_utils:random_n(T+1, DecShares)], CipherText)),
+    ok.
