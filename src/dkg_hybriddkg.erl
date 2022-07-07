@@ -502,7 +502,7 @@ verify_proofs({vss_ready_proofs, Proofs}, DKG = #dkg{n=N, t=T, f=F}) ->
             false
     end.
 
--spec serialize(dkg()) -> #{atom() => map() | binary()}.
+-spec serialize(dkg()) -> #{atom() => term()}.
 serialize(#dkg{id = Id,
                n = N,
                f = F,
@@ -537,20 +537,14 @@ serialize(#dkg{id = Id,
            leader_cap => LeaderCap,
            leader_vote_counts => LeaderVoteCounts,
            await_vss => AwaitVSS},
-    M = maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0),
-    maps:merge(PreSer, M).
+    maps:merge(PreSer, M0).
 
 -spec deserialize(#{}, fun(), fun()) -> dkg().
 deserialize(Map0, SignFun, VerifyFun) when is_map(Map0) ->
     deserialize(Map0, SignFun, VerifyFun, fun default_commitment_cache_fun/1).
 
 -spec deserialize(#{}, fun(), fun(), fun()) -> dkg().
-deserialize(Map0, SignFun, VerifyFun, CCacheFun) when is_map(Map0) ->
-    Map = maps:map(fun(K, V) when K == shares_map ->
-                           V;
-                      (_K, B) ->
-                           binary_to_term(B)
-                   end, Map0),
+deserialize(Map, SignFun, VerifyFun, CCacheFun) when is_map(Map) ->
         #{id := Id,
           n := N,
           f := F,

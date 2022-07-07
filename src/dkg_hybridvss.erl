@@ -230,7 +230,7 @@ handle_msg(VSS, _Sender, _Msg) ->
     %% we're likely done here, so there's no point in processing more messages
     {VSS, ignore}.
 
--spec serialize(vss()) -> #{atom() => binary() | map()}.
+-spec serialize(vss()) -> #{atom() => term()}.
 serialize(#vss{id = Id,
                n = N,
                f = F,
@@ -254,13 +254,10 @@ serialize(#vss{id = Id,
            commitments_sent => CS,
            commitments_received => CR,
            callback => Callback},
-    maps:map(fun(_K, Term) -> term_to_binary(Term) end, M0).
+    M0.
 
--spec deserialize(#{atom() => binary() | map()}, fun(), fun(), fun()) -> vss().
-deserialize(Map0, SignFun, VerifyFun, CCacheFun) ->
-    Map = maps:map(fun(_K, B) ->
-                           binary_to_term(B)
-                   end, Map0),
+-spec deserialize(#{atom() => term()}, fun(), fun(), fun()) -> vss().
+deserialize(Map, SignFun, VerifyFun, CCacheFun) ->
     #{id := Id,
       n := N,
       f := F,
